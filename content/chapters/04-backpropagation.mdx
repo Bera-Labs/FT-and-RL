@@ -54,7 +54,7 @@ Backpropagation is the answer. It's an efficient algorithm that applies the **ch
     },
     {
       title: "Step 3: Apply the chain rule layer by layer",
-      body: "The chain rule says: if output depends on hidden, and hidden depends on weight, then:\n∂Loss/∂weight = (∂Loss/∂hidden) × (∂hidden/∂weight)\n\nIn plain English: 'the gradient through a chain of operations is the product of all the individual gradients along the chain.'\n\nBackpropagation applies this rule repeatedly, layer by layer, working from the output back to the input.",
+      body: "The chain rule from calculus says: if A affects B, and B affects C, then A's total effect on C equals their product.\n\nApplied to neural networks:\n• ∂Loss/∂weight = (∂Loss/∂layer_output) × (∂layer_output/∂weight)\n• In plain English: 'how much did this weight contribute to the loss?' = 'how much did the layer's output matter to the loss?' × 'how much did this weight change that output?'\n\nBackpropagation applies this rule once per layer, working backwards:\n1. Start at the loss: how does the prediction error depend on the final layer's output?\n2. Move back one layer: how does that layer's output depend on its weights and its input?\n3. Repeat until every single weight has a gradient\n\nNo weight is ever computed in isolation — each gradient builds on the ones already computed in the layers after it.",
       whyItMatters: "The chain rule is why deep networks are trainable at all. Without it, we'd have to somehow estimate the gradient of each weight independently — impossible at scale.",
       diagram: `graph RL
   classDef output fill:#fee2e2,stroke:#f87171,color:#7f1d1d
@@ -72,7 +72,7 @@ Backpropagation is the answer. It's an efficient algorithm that applies the **ch
     },
     {
       title: "Step 4: Compute gradients for the weights",
-      body: "At each layer, we compute two things:\n1. The gradient for the weights in that layer (used to update those weights)\n2. The gradient that flows further backwards (used by the previous layer)\n\nFor a linear layer: z = Wx + b\n• ∂L/∂W = (∂L/∂z) × xᵀ  ← gradient for the weight matrix\n• ∂L/∂x = Wᵀ × (∂L/∂z)  ← gradient that flows back\n\nThis is the core computation that gets repeated at every layer.",
+      body: "At each layer, the backward pass computes two separate things:\n\n**1. Gradient for this layer's own weights** (used to update them):\n• Formula: ∂L/∂W = (∂L/∂z) × xᵀ\n• Meaning: how sensitive is the loss to each weight in this layer?\n• Result: tells gradient descent how much to adjust each weight\n\n**2. Gradient that flows back to the previous layer** (keeps the chain going):\n• Formula: ∂L/∂x = Wᵀ × (∂L/∂z)\n• Meaning: how sensitive is the loss to the inputs this layer received?\n• Result: becomes the incoming gradient for the layer before this one\n\nThese two computations happen at every layer — from the last layer all the way back to the first.",
       whyItMatters: "Each layer has two jobs in the backward pass: update itself, and pass information backwards. This is why backprop is efficient — every layer handles its own part.",
       diagram: `graph TD
   classDef incoming fill:#fef3c7,stroke:#f59e0b,color:#78350f
@@ -93,8 +93,8 @@ Backpropagation is the answer. It's an efficient algorithm that applies the **ch
     },
     {
       title: "Step 5: Handle activation functions",
-      body: "Remember that each neuron applies an activation function (like ReLU). This adds another term in the chain rule:\n∂L/∂z_pre = (∂L/∂z_post) × (∂activation/∂z_pre)\n\nFor ReLU: the gradient is 1 if the input was positive, and 0 if it was negative (since ReLU outputs 0 for negative inputs and any nudge won't change the output).\n\nThis is why we needed to save the forward pass values — we check whether each neuron's pre-activation was positive or negative to know its gradient.",
-      whyItMatters: "Activation gradients can be a problem. If too many neurons have zero gradient (all ReLU inputs were negative), gradients stop flowing and earlier layers stop learning. This is called the 'dying ReLU' problem.",
+      body: "Each neuron applies an activation function (like ReLU), which adds another term in the chain rule:\n∂L/∂z_pre = (∂L/∂z_post) × (∂activation/∂z_pre)\n\n**For ReLU specifically:**\n• If the neuron's input was positive during the forward pass → gradient passes through unchanged (×1)\n• If the neuron's input was negative during the forward pass → gradient is blocked completely (×0)\n\n**Why blocked?** ReLU outputs exactly 0 for any negative input. If the input is negative, nudging the weight up or down doesn't change the output at all — so the gradient is zero. This is why we save the forward pass activations: we need to check each neuron's sign to know which path to take.\n\n**The dying ReLU problem:** If a neuron consistently receives negative inputs, no gradient ever flows back through it. That weight is stuck — it never receives an update signal and stops learning permanently. Solutions:\n• Use LeakyReLU: allows a tiny gradient (0.01×) for negative inputs\n• Use GeLU: smooth curve that never truly blocks gradients\n• Avoid very large learning rates that can push neurons into the dead zone",
+      whyItMatters: "Dying ReLU is a real failure mode — networks can have 10–40% dead neurons after aggressive early training. This is one reason GeLU replaced ReLU in modern Transformers: it never produces a completely zero gradient, so no neuron can die.",
       diagram: `graph LR
   classDef pos fill:#dcfce7,stroke:#4ade80,color:#14532d
   classDef neg fill:#fee2e2,stroke:#f87171,color:#7f1d1d
