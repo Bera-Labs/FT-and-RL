@@ -21,7 +21,7 @@ export const PARTS = [
   { number: 2, title: 'Fine-Tuning', range: [8, 18] },
   { number: 3, title: 'Reinforcement Learning', range: [19, 28] },
   { number: 4, title: 'RLHF & Capstone', range: [29, 30] },
-  { number: 5, title: 'Modern Alignment & Retrieval', range: [31, 32] },
+  { number: 5, title: 'Modern Alignment & Retrieval', range: [31, 33] },
 ];
 
 export const CHAPTERS: Chapter[] = [
@@ -321,6 +321,15 @@ export const CHAPTERS: Chapter[] = [
       { topic: 'Cosine similarity', area: 'Linear Algebra', why: 'sim(A,B) = A·B / (|A||B|) is how RAG ranks retrieved chunks.' },
       { topic: 'Approximate nearest neighbors', area: 'Optimization', why: 'ANN algorithms (HNSW, IVF) make vector search fast over millions of embeddings.' },
       { topic: 'Vector spaces', area: 'Linear Algebra', why: 'Embedding models map text to high-dimensional vectors where semantic similarity = geometric proximity.' },
+    ],
+  },
+  {
+    id: 33, slug: '33-grpo', title: 'GRPO: Group Relative Policy Optimization', part: 5, partTitle: 'Modern Alignment & Retrieval',
+    description: 'Rate responses by comparing them to each other — no critic needed.',
+    mathConcepts: [
+      { topic: 'Sample mean & variance', area: 'Statistics', why: 'Group advantage A_i = (r_i − μ_r) / σ_r uses the sample mean as a baseline.' },
+      { topic: 'KL divergence', area: 'Information Theory', why: 'KL(π_θ ‖ π_ref) penalty prevents the policy from drifting too far from SFT.' },
+      { topic: 'Importance sampling', area: 'Probability', why: 'r_t = π_θ / π_old is the importance ratio used in the clipped PPO objective.' },
     ],
   },
 ];

@@ -110,7 +110,7 @@ Tabular Q-learning hits a wall with large state spaces. DQN (Deep Q-Network, Mni
     {
       title: "Step 5: DQN improvements — Double DQN and Dueling DQN",
       body: "The original DQN has known issues. Two important fixes:\n\n• Double DQN: standard DQN tends to overestimate Q-values. Here's the problem concretely: suppose Q(s', a1)=5.2 and Q(s', a2)=5.1 due to random noise — the true values might both be 5.0. argmax picks a1, then evaluates a1 with the same noisy network, getting a target of 5.2. The overestimate gets baked into the training target and compounds over time. Fix: use the online network to select the best action, but the target network (different noise) to evaluate its value:\ntarget = r + γ × Q_{θ⁻}(s', argmax_{a'} Q_θ(s', a'))\n\n• Dueling DQN: split the network into two streams:\n  - Value stream V(s): how good is this state?\n  - Advantage stream A(s,a): how much better is action a vs. average?\n  Q(s,a) = V(s) + A(s,a) − mean A(s,·)\n  This helps when many actions have similar Q-values — the value stream learns state quality even without action differences.",
-      whyItMatters: "Double DQN is a small change that consistently improves performance across games. Dueling DQN improves performance in environments where many actions have similar long-term value (e.g., moving around an empty area — direction barely matters). Together they form Double Dueling DQN, often the default in research.",
+      whyItMatters: "Double DQN is a small change that consistently improves performance across games. Dueling DQN improves performance in environments where many actions have similar long-term value (e.g., moving around an empty area — direction barely matters). Together they form Double Dueling DQN, often the default in research.\n\nFor language models: at each step the LM outputs a probability distribution over ~50,000 tokens — a discrete but huge action space. DQN would need a Q-value for every token at every step, which is infeasible. PPO (Chapter 27) handles this by directly optimizing the policy distribution, making it the standard choice for RLHF.",
       diagram: `graph LR
   classDef orig fill:#fef3c7,stroke:#f59e0b,color:#78350f
   classDef imp fill:#dcfce7,stroke:#4ade80,color:#14532d
@@ -120,20 +120,6 @@ Tabular Q-learning hits a wall with large state spaces. DQN (Deep Q-Network, Mni
 
   class DQN orig
   class DDQN,DUEL imp`
-    },
-    {
-      title: "Step 6: When DQN works and when it doesn't",
-      body: "DQN works well when:\n• State is visual / can be represented as a fixed-size tensor\n• Action space is discrete and relatively small (18 Atari buttons, hundreds of chess moves)\n• Environment is fully observable (or can be made so by stacking frames)\n• Many training episodes are possible (games can be played millions of times)\n\nDQN struggles when:\n• Action space is continuous (can't take argmax over infinite actions) → use DDPG, SAC, or PPO instead\n• Episodes are very long with sparse rewards → policy gradients often work better\n• The environment can't be run millions of times (real robots, medical trials) → need more sample-efficient methods",
-      whyItMatters: "DQN's limitation with continuous actions is directly relevant to language models: at each step, the LM outputs a probability distribution over 50,000 tokens — which is a discrete but very large action space. This makes DQN impractical for LLMs; PPO (Chapter 27) handles large discrete and continuous spaces better.",
-      diagram: `graph LR
-  classDef good fill:#dcfce7,stroke:#4ade80,color:#14532d
-  classDef bad fill:#fee2e2,stroke:#f87171,color:#7f1d1d
-
-  WORKS["DQN works well\n──────────────────\nAtari games (discrete buttons)\nBoard games (discrete moves)\nSimulation with fast resets\nVisual observations (pixels)"]
-  FAILS["DQN struggles\n──────────────────\nContinuous actions (robotics)\nVery sparse rewards\nReal-world (can't reset millions of times)\nHuge action spaces (50k vocab → use PPO)"]
-
-  class WORKS good
-  class FAILS bad`
     },
   ]}
 />

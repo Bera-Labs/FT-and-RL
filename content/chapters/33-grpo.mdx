@@ -1,0 +1,156 @@
+import AnalogyCard from '@/components/interactive/AnalogyCard';
+import StepWalkthrough from '@/components/interactive/StepWalkthrough';
+import MermaidDiagram from '@/components/interactive/MermaidDiagram';
+import ConceptCheck from '@/components/interactive/ConceptCheck';
+
+<AnalogyCard
+  title="Rating shots by comparing them to each other"
+  body="Imagine a basketball player practicing free throws. With PPO's approach, they'd hire a dedicated coach who watches every single throw and gives it a precise score out of 10 — expensive and time-consuming. GRPO's approach: take 8 shots in a row, then compare. The ones that went in were good; the ones that missed were bad. No coach needed — the group comparison is the signal. You know a shot was excellent if it went in while 6 of the other 8 missed. You know it was average if half went in and half missed. This group-relative judgment is exactly what GRPO does: instead of a trained critic estimating the value of every state, it generates multiple responses to the same prompt and compares their rewards within the group."
+/>
+
+## Why GRPO Exists
+
+PPO-based RLHF requires four neural networks simultaneously: the policy, the reference model, the reward model, and a separate critic (value network). The critic alone doubles memory and adds significant training complexity. GRPO eliminates the critic entirely.
+
+<MermaidDiagram chart={`graph LR
+  classDef ppo fill:#fee2e2,stroke:#f87171,color:#7f1d1d
+  classDef grpo fill:#dcfce7,stroke:#4ade80,color:#14532d
+
+  PPO["PPO-RLHF (4 models)\n──────────────────────\nPolicy model π_θ ✏️\nReference model π_ref 🔒\nReward model r 🔒\nCritic / value network V_φ ✏️\n─────\n~2× memory of SFT model\nCritic is hard to train\nTwo optimizers running"]
+  GRPO["GRPO (3 models)\n──────────────────────\nPolicy model π_θ ✏️\nReference model π_ref 🔒\nReward model r 🔒\n─────\nNo critic needed\nAdvantages from group comparison\nSame memory footprint as DPO"]
+
+  class PPO ppo
+  class GRPO grpo`}
+/>
+
+<StepWalkthrough
+  steps={[
+    {
+      title: "Step 1: The critic's role in PPO — and why it's costly",
+      body: "In PPO (Chapter 27), the critic estimates V(s) — the baseline that tells us whether an action was better or worse than average. Without this baseline, the gradient signal is too noisy (high variance) to train effectively.\n\nBut the critic is expensive:\n• It's a full copy of the policy model with a regression head\n• It must be trained simultaneously with the policy (two optimizers)\n• For a 7B model, it adds ~14 GB of VRAM and doubles the backpropagation cost\n• It takes many training steps to produce stable estimates\n\nThe question GRPO asks: can we get the same variance-reduction benefit without a trained critic?",
+      whyItMatters: "The critic's cost is why PPO-RLHF is 2–4× more expensive than SFT. For large models, fitting all four networks on available hardware requires model parallelism and careful memory management. Eliminating the critic makes the entire training pipeline fit in half the memory.",
+      diagram: `graph LR
+  classDef expensive fill:#fee2e2,stroke:#f87171,color:#7f1d1d
+  classDef cheap fill:#dcfce7,stroke:#4ade80,color:#14532d
+
+  PPO_MEM["PPO memory usage\nPolicy: 14 GB\nRef model: 14 GB\nReward model: 14 GB\nCritic: 14 GB + optimizer\nTotal: ~80–100 GB"] --> GRPO_MEM["GRPO memory usage\nPolicy: 14 GB\nRef model: 14 GB\nReward model: 14 GB\nTotal: ~50–60 GB\n✅ No critic"]
+
+  class PPO_MEM expensive
+  class GRPO_MEM cheap`
+    },
+    {
+      title: "Step 2: The group relative idea",
+      body: "GRPO's insight: the baseline we need (V(s)) is 'how good is this state on average?' For RLHF, the 'state' is the prompt. The expected reward given a prompt is approximately the average reward across many responses to that prompt.\n\nSo instead of training a network to estimate this average, just compute it directly:\n1. Generate G responses to the same prompt: {o₁, o₂, ..., o_G}\n2. Score each with the reward model: {r₁, r₂, ..., r_G}\n3. The group mean μ_r is an empirical estimate of V(prompt)\n4. The group-relative advantage for response i:\nA_i = (r_i − μ_r) / σ_r\n\nResponse i was 'good' if its reward was above the group average, 'bad' if below. The denominator σ_r normalizes the scale.\n\nThis is the same information the critic was providing — just computed from samples instead of a learned function.",
+      whyItMatters: "This works because in RLHF, all G responses share the same prompt (same 'state'). The group mean is a reasonable estimate of the state's expected value. With G=8 to 16 responses, the estimate is stable enough for training — no separate network needed.",
+      diagram: `graph TD
+  classDef prompt fill:#dbeafe,stroke:#60a5fa,color:#1e3a8a
+  classDef gen fill:#ede9fe,stroke:#8b5cf6,color:#4c1d95
+  classDef reward fill:#fef3c7,stroke:#f59e0b,color:#78350f
+  classDef adv fill:#dcfce7,stroke:#4ade80,color:#14532d
+
+  Q(["Prompt q\n'Solve: 2x + 3 = 11'"]) --> G1["Response 1: 'x = 4 ✓'\nr₁ = 1.0"]
+  Q --> G2["Response 2: 'x = 4 ✓'\nr₂ = 1.0"]
+  Q --> G3["Response 3: 'x = 5 ✗'\nr₃ = 0.0"]
+  Q --> G4["Response 4: 'x = 3 ✗'\nr₄ = 0.0"]
+  G1 & G2 & G3 & G4 --> MEAN["μ_r = 0.5, σ_r = 0.5\nA₁ = +1.0, A₂ = +1.0\nA₃ = −1.0, A₄ = −1.0"]
+
+  class Q prompt
+  class G1,G2,G3,G4 gen
+  class MEAN adv`
+    },
+    {
+      title: "Step 3: The GRPO objective",
+      body: "Once advantages are computed, GRPO uses the same clipped surrogate objective as PPO — just with group-relative advantages instead of GAE advantages:\n\nL_GRPO = E[ min(r_t × A_i, clip(r_t, 1−ε, 1+ε) × A_i) ] − β × KL[π_θ || π_ref]\n\nwhere r_t = π_θ(o_i | q) / π_θ_old(o_i | q) is the importance ratio.\n\nThe advantage A_i is the same for every token in response i (all tokens in a response share the group-relative reward). This is simpler than GAE, which assigns different advantages to different tokens within one response.\n\nThe KL penalty against the reference model is still present — it prevents the policy from drifting too far from the SFT baseline, same as in PPO-RLHF.",
+      whyItMatters: "The same PPO clipping mechanism applies — large policy changes are still constrained. GRPO isn't a new algorithm for stability, just a new source of advantage estimates. You get PPO's safety guarantees with the critic's cost eliminated.",
+      diagram: `graph LR
+  classDef same fill:#dbeafe,stroke:#60a5fa,color:#1e3a8a
+  classDef diff fill:#dcfce7,stroke:#4ade80,color:#14532d
+
+  SAME["Unchanged from PPO:\nClipped ratio r_t\nKL penalty vs π_ref\nMultiple epochs per batch\nε = 0.1–0.2"] --> OBJ["GRPO Objective\nL = clip(r_t, A_i) − β × KL"]
+  DIFF["Changed from PPO:\nA_i from group comparison\n(not from critic + GAE)\nSame A_i for all tokens\nin the same response"] --> OBJ
+
+  class SAME same
+  class DIFF diff`
+    },
+    {
+      title: "Step 4: The GRPO training loop",
+      body: "The GRPO training loop differs from PPO mainly in the rollout phase:\n\n**Rollout (data collection):**\n1. Sample a prompt q from the prompt dataset\n2. Generate G responses using the current policy (G = 8–16 typically)\n3. Score all G responses with the reward model\n4. Compute group mean μ_r and std σ_r\n5. Assign normalized advantage A_i = (r_i − μ_r) / σ_r to each response\n\n**Training:**\n6. For K epochs, update policy with clipped GRPO objective\n7. Add KL penalty vs reference model\n8. Update π_old ← π_θ\n\nThe G forward passes per prompt during rollout are the main cost tradeoff: you use more inference compute per prompt, but save the critic training and memory.",
+      whyItMatters: "The group size G controls the quality of the advantage estimate — larger G gives a better estimate of V(prompt) but costs G forward passes per prompt. G=8 is a practical sweet spot: good enough advantage estimates, and the 8 rollouts can be batched efficiently on modern hardware.",
+      diagram: `graph TD
+  classDef rollout fill:#dbeafe,stroke:#60a5fa,color:#1e3a8a
+  classDef compute fill:#fef3c7,stroke:#f59e0b,color:#78350f
+  classDef update fill:#6366f1,stroke:#4f46e5,color:#fff
+
+  PROMPT(["Sample prompt q"]) --> GEN["Generate G=8 responses\nusing current policy"]
+  GEN --> SCORE["Score all 8 with reward model\nr₁, r₂, ..., r₈"]
+  SCORE --> ADV["Normalize within group\nA_i = (r_i − μ) / σ"]
+  ADV --> EPOCHS["For K epochs:\nL_GRPO = clip(r_t, A_i) − β×KL\nGradient update"]
+  EPOCHS --> OLD["π_old ← π_θ"]
+  OLD --> PROMPT
+
+  class PROMPT,GEN rollout
+  class SCORE,ADV compute
+  class EPOCHS,OLD update`
+    },
+    {
+      title: "Step 5: DeepSeek-R1 — GRPO for reasoning",
+      body: "GRPO became widely known through DeepSeek-R1 (2025), which used it to train a powerful reasoning model.\n\nThe key insight in DeepSeek-R1: reasoning tasks have binary or near-binary rewards — either the final answer is correct or it isn't. This makes GRPO especially effective:\n• Generate 8 attempts at a math problem\n• Some are correct (reward = 1), some wrong (reward = 0)\n• Group comparison naturally scores correct reasoning chains above incorrect ones\n\nDeepSeek-R1 used GRPO with rule-based rewards (correct/incorrect answer verification) rather than a trained reward model, avoiding reward hacking at the foundation.\n\nResult: DeepSeek-R1 matched or exceeded o1-level math and coding performance — trained primarily with GRPO, no PPO critic.",
+      whyItMatters: "DeepSeek-R1 showed that GRPO + rule-based rewards (verifiable answers) is a powerful recipe for reasoning. The model learned to write extended chain-of-thought reasoning naturally, because longer correct reasoning chains got rewarded and shorter or incorrect ones didn't — no explicit CoT supervision needed.",
+      diagram: `graph LR
+  classDef r1 fill:#6366f1,stroke:#4f46e5,color:#fff
+  classDef stage fill:#dcfce7,stroke:#4ade80,color:#14532d
+  classDef reward fill:#fef3c7,stroke:#f59e0b,color:#78350f
+
+  SFT["Base model\n(pre-trained only)"] --> GRPO_COLD["Cold-start GRPO\nRule-based rewards\n(answer correct = +1)\nG = 8 rollouts per problem"]
+  GRPO_COLD --> REJECT["Rejection sampling SFT\nCollect high-quality GRPO outputs\nFine-tune on them"]
+  REJECT --> GRPO2["Second GRPO stage\nPolicy + reward model\n(generalise beyond math)"]
+  GRPO2 --> R1["DeepSeek-R1\n✓ o1-level math\n✓ Emergent CoT reasoning\n✓ No PPO critic needed"]
+
+  class SFT reward
+  class GRPO_COLD,GRPO2 r1
+  class REJECT,R1 stage`
+    },
+    {
+      title: "Step 6: GRPO vs PPO vs DPO — when to use which",
+      body: "All three are tools for aligning LLMs. Choose based on your constraints:\n\n**Use PPO when:**\n• You have compute budget for 4 simultaneous models\n• You need the most stable training (critic stabilizes long-horizon credit assignment)\n• Your reward signal is complex or continuous (not just correct/incorrect)\n\n**Use DPO when:**\n• You have preference pairs (human-labeled A > B comparisons)\n• You want simplest possible training (no RL loop at all)\n• You're fine-tuning for style/tone, not reasoning ability\n\n**Use GRPO when:**\n• You have a reward model or verifiable reward (not preference pairs)\n• Memory is constrained — no room for a 4th model\n• Your task has clear correct/incorrect outcomes (math, code, factual QA)\n• You want the training stability of PPO at lower memory cost",
+      whyItMatters: "The trend in 2024–2025 is away from PPO toward GRPO and DPO variants — not because PPO is wrong, but because its complexity is rarely justified. GRPO dominates for reasoning tasks; DPO dominates for instruction following and style alignment. Understanding all three lets you pick the right tool.",
+      diagram: `graph TD
+  classDef q fill:#fef3c7,stroke:#f59e0b,color:#78350f
+  classDef ppo fill:#dbeafe,stroke:#60a5fa,color:#1e3a8a
+  classDef dpo fill:#ede9fe,stroke:#8b5cf6,color:#4c1d95
+  classDef grpo fill:#dcfce7,stroke:#4ade80,color:#14532d
+
+  Q1{"Do you have\npreference pairs?"}
+  Q1 --"Yes"--> DPO["DPO\nNo RL, direct preference\nSimplest, lowest cost"]
+  Q1 --"No (reward model)"--> Q2{"Can afford\n4th critic model?"}
+  Q2 --"Yes"--> PPO["PPO\nMost stable, highest quality\nBest for complex rewards"]
+  Q2 --"No"--> GRPO["GRPO\nNo critic, group comparison\nBest for verifiable tasks"]
+
+  class Q1,Q2 q
+  class PPO ppo
+  class DPO dpo
+  class GRPO grpo`
+    },
+  ]}
+/>
+
+<ConceptCheck
+  question="In GRPO, why does the advantage A_i = (r_i − μ_r) / σ_r work as a substitute for the PPO critic's advantage estimate A = r + γV(s') − V(s)?"
+  answer="Both measure the same thing: 'was this response/action better or worse than the baseline expectation?' In PPO, the baseline is V(s) — the critic's estimate of expected reward from this state. In GRPO, the baseline is μ_r — the actual mean reward across G responses to the same prompt. Since all G responses share the same prompt (same state), their mean reward is an empirical estimate of V(prompt). With G=8 or more samples, this empirical estimate is stable enough to serve as a reliable baseline. The division by σ_r normalizes the scale so advantages are consistent across prompts with different reward magnitudes — the same role that GAE normalization plays in PPO."
+/>
+
+## GRPO at a Glance
+
+<MermaidDiagram chart={`graph LR
+  classDef ppo fill:#dbeafe,stroke:#60a5fa,color:#1e3a8a
+  classDef dpo fill:#ede9fe,stroke:#8b5cf6,color:#4c1d95
+  classDef grpo fill:#dcfce7,stroke:#4ade80,color:#14532d
+
+  PPO["PPO\n──────────────────\nModels: 4 (policy + ref + RM + critic)\nAdvantage: critic + GAE\nNeeds: reward model\nStrength: stable, general\nUsed in: InstructGPT, Claude 1–2"]
+  DPO["DPO\n──────────────────\nModels: 2 (policy + ref)\nAdvantage: implicit from preference\nNeeds: preference pairs\nStrength: simplest, cheapest\nUsed in: many instruction models"]
+  GRPO["GRPO\n──────────────────\nModels: 3 (policy + ref + RM)\nAdvantage: group-relative reward\nNeeds: reward model\nStrength: no critic, scales well\nUsed in: DeepSeek-R1, R2"]
+
+  class PPO ppo
+  class DPO dpo
+  class GRPO grpo`}
+/>

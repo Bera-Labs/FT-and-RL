@@ -78,22 +78,7 @@ Q-learning (Watkins, 1989) is one of the most important algorithms in RL. It dir
   class ON on`
     },
     {
-      title: "Step 4: A complete Q-learning walkthrough",
-      body: "Let's trace Q-learning on a simple grid: agent starts at (0,0), goal at (3,3), reward +10 at goal, −1 per step. α=0.1, γ=0.9.\n\n**Turn 1 — Explore:**\n1. Agent is at state (0,0), all Q values = 0\n2. ε-greedy picks 'right' at random (ε=0.9, mostly exploring)\n3. Environment returns: new state (1,0), reward −1\n\n**Turn 1 — Update Q((0,0), right):**\n4. Target = r + γ × max Q((1,0), ·) = −1 + 0.9 × 0 = −1.0\n5. TD error = Target − Current = −1.0 − 0.0 = −1.0\n6. New Q = 0 + 0.1 × (−1.0) = **−0.1** ← the first learning signal\n\n**After 10,000 turns:**\n- Negative step penalties accumulate on bad paths\n- +10 goal reward propagates backward through Q values\n- Optimal path crystallizes: right→right→right→up→up→up",
-      whyItMatters: "Each update is tiny (-0.1) but correct. After thousands of steps, the negative penalties for suboptimal paths accumulate and the Q-values accurately reflect the shortest path. The key insight: you don't need to reason about the whole problem — just make local updates that collectively produce global optima.",
-      diagram: `graph LR
-  classDef pos fill:#dcfce7,stroke:#4ade80,color:#14532d
-  classDef neg fill:#fee2e2,stroke:#f87171,color:#7f1d1d
-  classDef goal fill:#6366f1,stroke:#4f46e5,color:#fff
-
-  START["(0,0)\nStart"] --> R1["(1,0)\nr=−1"] --> R2["(2,0)\nr=−1"] --> R3["(3,0)\nr=−1"]
-  R3 --> U1["(3,1)\nr=−1"] --> U2["(3,2)\nr=−1"] --> GOAL["(3,3)\nr=+10\n✅ GOAL"]
-
-  class START,R1,R2,R3,U1,U2 neg
-  class GOAL goal`
-    },
-    {
-      title: "Step 5: Convergence and limitations",
+      title: "Step 4: Convergence and limitations",
       body: "Q-learning provably converges to the optimal Q-function given:\n• Every (state, action) pair is visited infinitely often (guaranteed by ε-greedy with ε > 0)\n• The learning rate α decays appropriately\n\nLimitations:\n• Tabular Q-learning only works for small, discrete state/action spaces. A video game with 84×84×4 = 28,000 pixel values has more possible states than atoms in the observable universe — no table can store them.\n• Requires many samples to converge — each Q(s,a) must be updated many times\n• Doesn't generalize: learning Q(s,a) tells you nothing about Q(s', a) for a similar state s'",
       whyItMatters: "Understanding tabular Q-learning's limitations directly motivates DQN (Chapter 24). DQN replaces the table with a neural network that can generalize across similar states — giving us Q-learning that works at scale.",
       diagram: `graph LR
@@ -108,20 +93,6 @@ Q-learning (Watkins, 1989) is one of the most important algorithms in RL. It dir
   class SMALL small
   class LARGE large
   class DQN fix`
-    },
-    {
-      title: "Step 6: SARSA — the on-policy alternative",
-      body: "SARSA (State-Action-Reward-State-Action) is the on-policy cousin of Q-learning:\n\nQ(s, a) ← Q(s, a) + α × [r + γ × Q(s', a') − Q(s, a)]\n\nThe key difference: Q-learning updates toward max_a Q(s', a') (the best action). SARSA updates toward Q(s', a') where a' is the action actually taken (which could be a random exploration action).\n\nThis makes SARSA more conservative: if you sometimes take random risky actions (exploration), SARSA accounts for that — it knows you'll sometimes make suboptimal moves. Q-learning assumes you'll always take the best action.\n\nResult: SARSA tends to learn safer policies in risky environments. Q-learning learns more optimal policies when the learned policy is purely greedy.",
-      whyItMatters: "SARSA is preferred when exploration and deployment use the same policy (on-policy), and when safety matters — risky exploratory actions count against the policy. Q-learning is preferred when you can separate exploration behavior from the learned policy and optimize purely for performance.",
-      diagram: `graph LR
-  classDef sarsa fill:#fef3c7,stroke:#f59e0b,color:#78350f
-  classDef ql fill:#dcfce7,stroke:#4ade80,color:#14532d
-
-  ENV(["State s\naction a taken\nreward r\nnext state s'"]) --> QL["Q-Learning update:\nToward: r + γ × MAX Q(s', any_a)\n(assumes optimal future behavior)"]
-  ENV --> SARSA["SARSA update:\nToward: r + γ × Q(s', a_actual)\n(accounts for actual future behavior)"]
-
-  class QL ql
-  class SARSA sarsa`
     },
   ]}
 />

@@ -17,7 +17,7 @@ export default function Home() {
   return (
     <div className="max-w-5xl mx-auto px-4 py-12">
       <div className="mb-12 text-center">
-        <Badge variant="secondary" className="mb-4">30 chapters · Beginner friendly</Badge>
+        <Badge variant="secondary" className="mb-4">33 chapters · Beginner friendly</Badge>
         <h1 className="text-4xl font-bold tracking-tight mb-4">
           Fine-Tuning &amp; Reinforcement Learning
         </h1>
