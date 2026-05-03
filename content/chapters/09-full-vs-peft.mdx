@@ -1,0 +1,160 @@
+import AnalogyCard from '@/components/interactive/AnalogyCard';
+import StepWalkthrough from '@/components/interactive/StepWalkthrough';
+import MermaidDiagram from '@/components/interactive/MermaidDiagram';
+import ConceptCheck from '@/components/interactive/ConceptCheck';
+
+<AnalogyCard
+  title="Rebuilding a house vs. repainting the rooms"
+  body="Suppose you bought a well-built house and want to make it feel like yours. Option A: gut the whole interior — new walls, new floors, new plumbing, new wiring. Maximum control, but enormous cost and time. Option B: repaint the walls, swap the furniture, add some shelves. The house structure stays the same — you're adding a personal layer on top. Full fine-tuning is option A: every weight in the model gets updated. Parameter-efficient fine-tuning (PEFT) is option B: you freeze most of the model and only train a small number of new parameters, achieving surprisingly similar results at a fraction of the cost."
+/>
+
+## The Memory Problem
+
+Fine-tuning a large model is expensive. Consider a 7B-parameter model:
+
+<MermaidDiagram chart={`graph TD
+  classDef bad fill:#fee2e2,stroke:#f87171,color:#7f1d1d
+  classDef ok fill:#fef3c7,stroke:#f59e0b,color:#78350f
+  classDef good fill:#dcfce7,stroke:#4ade80,color:#14532d
+
+  FULL["Full fine-tuning — 7B model\n──────────────────────────────\nModel weights (fp16): 14 GB\nGradients: 14 GB\nOptimizer states (AdamW): 56 GB\n─────────────────\nTotal: ~84 GB VRAM\n❌ Needs 2–4 A100 GPUs ($10k+)"]
+  LORA["LoRA fine-tuning — 7B model\n──────────────────────────────\nFrozen model weights: 14 GB\nTrainable LoRA params: 0.04 GB\nOptimizer states (LoRA only): 0.16 GB\n─────────────────\nTotal: ~16 GB VRAM\n✅ Fits on one consumer GPU"]
+
+  class FULL bad
+  class LORA good`}
+/>
+
+<StepWalkthrough
+  steps={[
+    {
+      title: "Step 1: Full fine-tuning — update every weight",
+      body: "Full fine-tuning treats the pre-trained model like any other neural network: every single parameter is unfrozen, every gradient is computed, every weight is updated each training step.\n\nAdvantages:\n• Maximum expressiveness — the model can change anything\n• Proven results on complex domain adaptation\n\nDisadvantages:\n• Requires storing gradients and optimizer states for all weights\n• For a 7B model with AdamW: ~84 GB of VRAM just to train\n• Must store a complete copy of the model per fine-tuned task\n• Risk of catastrophic forgetting if learning rate is too high",
+      whyItMatters: "Full fine-tuning gives the best upper bound on quality — but the hardware requirements put it out of reach for most individuals and small teams. PEFT methods exist specifically to close that gap.",
+      diagram: `graph LR
+  classDef frozen fill:#dbeafe,stroke:#60a5fa,color:#1e3a8a
+  classDef active fill:#6366f1,stroke:#4f46e5,color:#fff
+  classDef mem fill:#fee2e2,stroke:#f87171,color:#7f1d1d
+
+  L1["Layer 1\n✏️ all weights update"] --> L2["Layer 2\n✏️ all weights update"]
+  L2 --> L3["Layer 3\n✏️ all weights update"]
+  L3 --> LN["··· N layers\n✏️ all weights update"]
+  LN --> MEM["Memory: gradients + optimizer\nfor every single weight\n~84 GB for 7B model 🔴"]
+
+  class L1,L2,L3,LN active
+  class MEM mem`
+    },
+    {
+      title: "Step 2: Frozen layers — the key PEFT insight",
+      body: "The core insight behind all PEFT methods: the pre-trained model already knows language. The 7B weights already encode grammar, reasoning, world knowledge. For most tasks, you don't need to change all of that.\n\nSo: freeze most of the weights (mark them as non-trainable). They still participate in the forward pass — the model still uses them — but no gradients are computed for them, and they're never updated.\n\nThis means:\n• No gradient storage for frozen layers (huge memory saving)\n• No optimizer state for frozen layers (another huge saving)\n• Only a tiny subset of parameters actually train",
+      whyItMatters: "Freezing is why PEFT works. The frozen base model provides all the language understanding; you only train the small adapters that specialize it for your task.",
+      diagram: `graph LR
+  classDef frozen fill:#dbeafe,stroke:#60a5fa,color:#1e3a8a
+  classDef active fill:#dcfce7,stroke:#4ade80,color:#14532d
+  classDef skip fill:#f1f5f9,stroke:#94a3b8,color:#334155
+
+  L1["Layer 1\n🔒 frozen\n(no gradients)"] --> L2["Layer 2\n🔒 frozen\n(no gradients)"]
+  L2 --> L3["Layer 3\n🔒 frozen\n(no gradients)"]
+  L3 --> A["Adapter / LoRA\n✏️ only these train\n~0.1% of params"]
+  A --> LN["Layer N\n🔒 frozen\n(no gradients)"]
+
+  class L1,L2,L3,LN frozen
+  class A active`
+    },
+    {
+      title: "Step 3: LoRA — the dominant PEFT method",
+      body: "LoRA (Low-Rank Adaptation) is the most widely used PEFT method. Instead of updating a large weight matrix W directly, LoRA adds two small matrices A and B alongside it:\n\nW_new = W_frozen + B × A\n\nWhere:\n• W is the original frozen weight matrix (e.g., 4096 × 4096 = 16M parameters)\n• A is a small matrix: 4096 × r (e.g., r=16, so 65k parameters)\n• B is a small matrix: r × 4096 (another 65k parameters)\n• Only A and B are trained (130k parameters vs 16M!)\n\nThe key assumption: the update ΔW = B×A can be well-approximated by a low-rank matrix. For most fine-tuning tasks, this holds remarkably well.",
+      whyItMatters: "LoRA is why fine-tuning has become accessible to individuals with consumer hardware. A single RTX 3090 (24 GB, ~$700) can fine-tune a 7B model using LoRA — something that would require $50k+ of cloud GPU without it.",
+      diagram: `graph LR
+  classDef frozen fill:#dbeafe,stroke:#60a5fa,color:#1e3a8a
+  classDef lora fill:#dcfce7,stroke:#4ade80,color:#14532d
+  classDef result fill:#6366f1,stroke:#4f46e5,color:#fff
+
+  X(["Input"]) --> W["W (frozen)\n4096×4096\n16M params\n🔒 never changes"]
+  X --> A["A matrix\n4096×16\n65k params ✏️"]
+  A --> B["B matrix\n16×4096\n65k params ✏️"]
+  W --> ADD["Output = Wx + BAx"]
+  B --> ADD
+
+  class W frozen
+  class A,B lora
+  class ADD result`
+    },
+    {
+      title: "Step 4: Adapters — an alternative approach",
+      body: "Adapter layers (Houlsby et al., 2019) are small bottleneck modules inserted between existing Transformer layers. The original layers are frozen; only the adapter weights train.\n\nAn adapter takes the layer's output, projects it down to a small dimension (e.g., 64), applies a non-linearity, then projects back up:\n\nAdapter(x) = W_up × ReLU(W_down × x) + x\n\nThe residual connection (+x) ensures that when adapter weights start at zero, the model behaves identically to the original — training starts from a stable point.\n\nAdapters add small latency at inference (extra layers to compute); LoRA can be merged into W with zero inference cost, which is why LoRA is generally preferred today.",
+      whyItMatters: "Adapters demonstrated that PEFT could work at all — they were the proof of concept that led to LoRA and subsequent methods. Understanding them helps you understand why LoRA's approach of not adding new layers (just decomposing updates) is an improvement.",
+      diagram: `graph TD
+  classDef frozen fill:#dbeafe,stroke:#60a5fa,color:#1e3a8a
+  classDef adapter fill:#fef3c7,stroke:#f59e0b,color:#78350f
+  classDef res fill:#dcfce7,stroke:#4ade80,color:#14532d
+
+  L["Transformer Layer output\n(frozen)"] --> D["W_down: 768 → 64\n(bottleneck)"]
+  D --> ACT["ReLU / GeLU"]
+  ACT --> U["W_up: 64 → 768\n(project back)"]
+  L --> RES["Residual\n(bypass)"]
+  U --> ADD["Add together\n= adapted output"]
+  RES --> ADD
+
+  class L frozen
+  class D,ACT,U adapter
+  class RES,ADD res`
+    },
+    {
+      title: "Step 5: Prefix tuning and prompt tuning",
+      body: "Two lighter-weight alternatives:\n\n• Prompt tuning: instead of updating any weights, learn a set of 'soft prompt' token embeddings that get prepended to every input. Only these embeddings (~100 × 768 = 76k parameters) train. The entire model is frozen.\n\n• Prefix tuning: similar but prepends learned vectors to each Transformer layer's key and value matrices, giving more influence at every layer.\n\nThese methods are extremely lightweight — a few thousand trainable parameters — but less expressive than LoRA. They work well when your task is similar to the pre-training distribution; they struggle for domain adaptation.",
+      whyItMatters: "Prompt tuning is interesting conceptually — it's essentially learning 'the best way to ask this model to do your task' in vector space rather than English. But in practice, LoRA achieves better results with only modest additional cost.",
+      diagram: `graph LR
+  classDef soft fill:#fef3c7,stroke:#f59e0b,color:#78350f
+  classDef frozen fill:#dbeafe,stroke:#60a5fa,color:#1e3a8a
+  classDef out fill:#dcfce7,stroke:#4ade80,color:#14532d
+
+  SP["Soft prompt tokens\n[v₁][v₂][v₃] ✏️ trainable\n(~100 vectors)"] --> INPUT["Prepend to input\n[v₁][v₂][v₃] + real tokens"]
+  INPUT --> MODEL["Frozen Transformer\n(all 7B weights locked)"]
+  MODEL --> OUT["Task-specific output\nguided by soft prompt"]
+
+  class SP soft
+  class MODEL frozen
+  class OUT out`
+    },
+    {
+      title: "Step 6: Choosing your method",
+      body: "Here's the practical decision tree:\n\n• Have 80+ GB VRAM or 4+ A100s? → Full fine-tuning (best quality ceiling)\n• Have 16–24 GB VRAM (one GPU)? → LoRA or QLoRA (Chapter 13–14)\n• Have < 8 GB VRAM? → QLoRA with 4-bit base model\n• Task very close to pre-training distribution? → Prompt tuning might suffice\n• Need zero inference overhead? → LoRA (merge weights after training)\n• Serving many users each with their own fine-tune? → Adapters (hot-swap without full model reload)\n\nFor 90% of real-world applications, LoRA is the right answer.",
+      whyItMatters: "PEFT choice is a practical engineering decision, not a research question. Match the method to your hardware budget, your task complexity, and your inference constraints.",
+      diagram: `graph TD
+  classDef q fill:#fef3c7,stroke:#f59e0b,color:#78350f
+  classDef ans fill:#dcfce7,stroke:#4ade80,color:#14532d
+  classDef alt fill:#ede9fe,stroke:#8b5cf6,color:#4c1d95
+
+  Q1{"80+ GB VRAM?"} --"Yes"--> FULL["Full fine-tuning"]
+  Q1 --"No"--> Q2{"16–24 GB VRAM?"}
+  Q2 --"Yes"--> LORA["LoRA"]
+  Q2 --"No"--> Q3{"< 8 GB VRAM?"}
+  Q3 --"Yes"--> QLORA["QLoRA (4-bit)"]
+  Q3 --"No (cloud)"--> LORA
+
+  class Q1,Q2,Q3 q
+  class FULL,LORA,QLORA ans`
+    },
+  ]}
+/>
+
+<ConceptCheck
+  question="LoRA adds matrices A and B with rank r=16 to a weight matrix of size 4096×4096. How many trainable parameters does this LoRA addition have, compared to the original weight matrix?"
+  answer="The original weight matrix has 4096 × 4096 = 16,777,216 parameters. LoRA adds: A (4096 × 16 = 65,536) + B (16 × 4096 = 65,536) = 131,072 trainable parameters. That's 131k vs 16.7M — roughly 0.78% of the original. LoRA achieves similar performance by training less than 1% of the parameters of a full update."
+/>
+
+## Side-by-Side Comparison
+
+<MermaidDiagram chart={`graph LR
+  classDef full fill:#fee2e2,stroke:#f87171,color:#7f1d1d
+  classDef lora fill:#dcfce7,stroke:#4ade80,color:#14532d
+  classDef ptuning fill:#ede9fe,stroke:#8b5cf6,color:#4c1d95
+
+  FULL["Full Fine-Tuning\n──────────────────\nTrainable params: 100%\nVRAM (7B): ~84 GB\nQuality ceiling: highest\nInference overhead: none\nTask switching: reload model"]
+  LORA["LoRA\n──────────────────\nTrainable params: ~0.1–1%\nVRAM (7B): ~16 GB\nQuality ceiling: near-full\nInference overhead: none (merge)\nTask switching: swap adapters"]
+  PT["Prompt Tuning\n──────────────────\nTrainable params: < 0.01%\nVRAM (7B): ~14 GB\nQuality ceiling: moderate\nInference overhead: minimal\nTask switching: swap prompts"]
+
+  class FULL full
+  class LORA lora
+  class PT ptuning`}
+/>

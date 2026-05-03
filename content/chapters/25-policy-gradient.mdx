@@ -1,0 +1,155 @@
+import AnalogyCard from '@/components/interactive/AnalogyCard';
+import StepWalkthrough from '@/components/interactive/StepWalkthrough';
+import MermaidDiagram from '@/components/interactive/MermaidDiagram';
+import ConceptCheck from '@/components/interactive/ConceptCheck';
+
+<AnalogyCard
+  title="Directly adjusting your strategy, not the value map"
+  body="Q-learning and DQN learned a value map first — 'how good is each (state, action) pair?' — and then derived a strategy from it. Policy gradient methods skip the value map entirely and adjust the strategy directly. Imagine a tennis player who doesn't calculate the expected return of every possible shot. Instead, after winning a point, they think 'I'm going to do that serve more often.' After losing a point, 'I'll do that less.' They're directly reinforcing good behaviors and discouraging bad ones — adjusting probabilities based on outcomes. That's the essence of policy gradient: directly nudge the policy toward actions that led to high reward."
+/>
+
+## A Different Approach to RL
+
+Q-learning asks: *what is the value of each action?* Then derives a policy from that.
+
+Policy gradient methods ask: *what parameters make this policy produce more reward?* And optimize directly.
+
+<MermaidDiagram chart={`graph LR
+  classDef vb fill:#dbeafe,stroke:#60a5fa,color:#1e3a8a
+  classDef pg fill:#dcfce7,stroke:#4ade80,color:#14532d
+
+  VB["Value-Based (DQN, Q-learning)\n──────────────────────────────\nLearn: Q(s,a) for all state-action pairs\nDerive: π(s) = argmax_a Q(s,a)\n✓ Sample efficient\n✗ Requires discrete action space\n✗ Indirect: Q → policy"]
+  PG["Policy Gradient\n──────────────────────────────\nLearn: π_θ(a|s) directly\nOptimize: θ to maximize expected reward\n✓ Works for continuous actions\n✓ Naturally stochastic policy\n✗ High variance, needs more samples"]
+
+  class VB vb
+  class PG pg`}
+/>
+
+<StepWalkthrough
+  steps={[
+    {
+      title: "Step 1: The policy as a differentiable function",
+      body: "In policy gradient, the policy is a neural network with parameters θ:\nπ_θ(a | s) = probability of taking action a in state s\n\nWe want to find θ that maximizes the expected return:\nJ(θ) = E[G_t] = expected cumulative reward when following policy π_θ\n\nSince J is differentiable with respect to θ, we can use gradient ascent (like gradient descent, but going uphill toward higher reward):\nθ ← θ + α × ∇_θ J(θ)\n\nThe question is: how do we compute ∇_θ J(θ)? The environment isn't differentiable — we can't backpropagate through the dice rolls of a stochastic environment.",
+      whyItMatters: "The policy being differentiable is what enables gradient-based optimization. The challenge is that the expected return involves sampling from both the policy and the environment — we need a clever trick (the policy gradient theorem) to compute the gradient without needing the environment to be differentiable.",
+      diagram: `graph LR
+  classDef inp fill:#dbeafe,stroke:#60a5fa,color:#1e3a8a
+  classDef policy fill:#6366f1,stroke:#4f46e5,color:#fff
+  classDef reward fill:#dcfce7,stroke:#4ade80,color:#14532d
+
+  S(["State s"]) --> PI["Policy network π_θ(a|s)\nParameters θ\nOutputs: action probabilities"]
+  PI --> PROBS["P(left)=0.3\nP(right)=0.6\nP(up)=0.1"]
+  PROBS --> SAMPLE["Sample action a\n→ execute in environment"]
+  SAMPLE --> R["Reward r\n→ use to update θ"]
+
+  class S inp
+  class PI policy
+  class PROBS,SAMPLE,R reward`
+    },
+    {
+      title: "Step 2: The REINFORCE algorithm",
+      body: "REINFORCE (Williams, 1992) is the simplest policy gradient algorithm. The core idea:\n\n1. Run a complete episode using the current policy, collecting: (s₀, a₀, r₀), (s₁, a₁, r₁), ...\n2. For each timestep t, compute the return G_t (total discounted reward from t onward)\n3. Update the policy: for each step, if G_t was high, increase the probability of action a_t in state s_t; if low, decrease it\n\nThe gradient update:\n∇_θ J(θ) = E[G_t × ∇_θ log π_θ(a_t | s_t)]\n\nInterpretation: if action a led to high return G_t, increase the log-probability of taking a in s. If it led to low return, decrease it.",
+      whyItMatters: "The log probability trick (∇ log π × G) is elegant — it converts a gradient through a sampling operation into a product of two quantities we can compute: the return G (from rollout) and the gradient of log-probability (from backprop through the policy network).",
+      diagram: `graph TD
+  classDef collect fill:#dbeafe,stroke:#60a5fa,color:#1e3a8a
+  classDef compute fill:#fef3c7,stroke:#f59e0b,color:#78350f
+  classDef update fill:#dcfce7,stroke:#4ade80,color:#14532d
+
+  ROLLOUT["Run full episode\n(s₀,a₀,r₀), (s₁,a₁,r₁), ..."] --> RETURN["Compute returns\nG_t = r_t + γr_{t+1} + γ²r_{t+2} + ..."]
+  RETURN --> GRAD["For each step t:\nCompute ∇_θ log π_θ(a_t|s_t)\n× G_t"]
+  GRAD --> UPDATE["θ ← θ + α × Σ_t G_t ∇ log π_θ(a_t|s_t)"]
+  UPDATE --> NEXT["Run next episode\nwith updated policy"]
+
+  class ROLLOUT collect
+  class RETURN,GRAD compute
+  class UPDATE,NEXT update`
+    },
+    {
+      title: "Step 3: The variance problem",
+      body: "REINFORCE has a major weakness: high variance.\n\nThe return G_t varies a lot across episodes due to randomness in the environment and policy. In one run, an action might get G=+50 because things went well after it. In another, the same action gets G=−30 because of random bad luck later. The policy update averages over these noisy signals, but needs many episodes to converge.\n\nAnalogy: evaluating a restaurant based on whether you happened to get a table quickly. Your waiting time varies randomly — you need many visits before your rating converges to the restaurant's true quality.\n\nThis variance makes REINFORCE slow — it often needs thousands of episodes to learn a good policy.",
+      whyItMatters: "Variance reduction is the central research problem in policy gradient methods. Every improvement (baselines, Actor-Critic, GAE) is fundamentally about reducing variance while keeping the gradient estimate unbiased.",
+      diagram: `graph LR
+  classDef high fill:#fee2e2,stroke:#f87171,color:#7f1d1d
+  classDef low fill:#dcfce7,stroke:#4ade80,color:#14532d
+
+  EP1["Episode 1:\nAction: go right\nReturn G = +45\n(lucky outcomes later)"] --> AVG
+  EP2["Episode 2:\nAction: go right\nReturn G = −20\n(unlucky outcomes later)"] --> AVG
+  EP3["Episode 3:\nAction: go right\nReturn G = +30\n(moderate outcomes)"] --> AVG
+  AVG["Noisy average signal\nfor 'go right' action\n→ many episodes needed\nto get stable estimate"]
+
+  class EP1,AVG high
+  class EP3 low`
+    },
+    {
+      title: "Step 4: Baseline subtraction — variance reduction",
+      body: "A key variance reduction trick: subtract a baseline b(s) from the return:\n\n∇_θ J(θ) = E[(G_t − b(s_t)) × ∇_θ log π_θ(a_t | s_t)]\n\nThe baseline doesn't change the expected gradient (it's mathematically unbiased) but dramatically reduces variance.\n\nA good baseline: b(s) = V(s), the estimated value of state s. Then G_t − V(s_t) is the advantage A(s_t, a_t) — 'was this action better or worse than what I'd normally expect in this state?'\n\nThis is much lower variance because we're no longer asking 'was the return high?' but 'was the return higher than expected?' A return of +30 might be mediocre if the baseline is +28, or excellent if the baseline is +5.",
+      whyItMatters: "The advantage A = G − V is the foundation of Actor-Critic methods (Chapter 26). It directly answers 'was this action a good idea?' rather than 'was the outcome good?' — removing the noise caused by factors outside the action's control.",
+      diagram: `graph LR
+  classDef nobase fill:#fee2e2,stroke:#f87171,color:#7f1d1d
+  classDef withbase fill:#dcfce7,stroke:#4ade80,color:#14532d
+
+  NB["Without baseline\nReturn G = +45\nUpdate: increase prob of action by +45\n(was it good? We have no reference)"] --> COMPARE
+  WB["With baseline V(s) = +42\nAdvantage A = +45 − +42 = +3\nUpdate: increase prob by +3 only\n(was slightly better than expected)"] --> COMPARE
+  COMPARE["Much smaller, more stable update\n→ faster convergence\n→ lower variance"]
+
+  class NB nobase
+  class WB withbase`
+    },
+    {
+      title: "Step 5: Policy gradient vs. value-based: when to use which",
+      body: "Policy gradient advantages:\n• Works naturally with continuous action spaces (output a continuous vector, not argmax over discrete actions)\n• Stochastic policies (outputting probabilities) are natural — useful when randomness helps (exploration, game theory)\n• Can directly optimize for any differentiable objective\n\nValue-based advantages:\n• More sample efficient (can reuse experience from replay buffer)\n• More stable training (value function is smoother than policy)\n\nFor language models: PPO (a policy gradient method, Chapter 27) is the standard. The enormous discrete action space (50k tokens) and the sequential nature of generation make policy gradients more suitable.",
+      whyItMatters: "The choice between policy gradient and value-based is a fundamental design decision in RL. For continuous control: policy gradients. For discrete games with small action spaces: value-based. For LLMs and complex sequential generation: policy gradients (PPO specifically).",
+      diagram: `graph TD
+  classDef pg fill:#dcfce7,stroke:#4ade80,color:#14532d
+  classDef vb fill:#dbeafe,stroke:#60a5fa,color:#1e3a8a
+
+  CONT["Continuous actions\n(robotics, driving)\n→ Policy gradient"] --> PG["Policy Gradient\nPPO · A3C · SAC"]
+  LARGE["Large discrete actions\n(LLM: 50k tokens)\n→ Policy gradient"] --> PG
+  SMALL["Small discrete actions\n(Atari: 18 buttons)\n→ Value-based"] --> VB["Value-Based\nDQN · Double DQN"]
+  SAMPLE["Need sample efficiency\n→ Value-based (replay buffer)"] --> VB
+
+  class PG pg
+  class VB vb`
+    },
+    {
+      title: "Step 6: The policy gradient theorem",
+      body: "The formal result underlying all policy gradient methods:\n\n∇_θ J(θ) = E_π [ Q^π(s,a) × ∇_θ log π_θ(a|s) ]\n\nThis says: the gradient of expected return is the expected value of (Q-value of the taken action) × (gradient of log policy probability).\n\nIn practice: collect samples from the current policy, estimate Q^π(s,a) (or advantage A(s,a)), multiply by ∇ log π, and average. That's the gradient to ascend.\n\nDifferent algorithms differ mainly in how they estimate Q^π:\n• REINFORCE: use the actual return G_t\n• Actor-Critic: use a learned value function as baseline\n• PPO: use clipped ratio to prevent large updates",
+      whyItMatters: "The policy gradient theorem proves that we can optimize the expected return using only samples from the current policy — without knowing the transition dynamics. This is why policy gradients are 'model-free': no knowledge of P(s'|s,a) is required.",
+      diagram: `graph LR
+  classDef theorem fill:#6366f1,stroke:#4f46e5,color:#fff
+  classDef algo fill:#dcfce7,stroke:#4ade80,color:#14532d
+
+  THM["Policy Gradient Theorem\n∇J(θ) = E[Q^π(s,a) × ∇log π_θ(a|s)]"] --> REINFORCE["REINFORCE\nQ^π ≈ actual return G_t"]
+  THM --> AC["Actor-Critic\nQ^π ≈ learned V(s) + TD error"]
+  THM --> PPO["PPO (Chapter 27)\nQ^π ≈ advantage A(s,a)\n+ clipped ratio constraint"]
+
+  class THM theorem
+  class REINFORCE,AC,PPO algo`
+    },
+  ]}
+/>
+
+<ConceptCheck
+  question="REINFORCE assigns a return of G=+8 to every action taken in an episode that ended with a win. But action 3 was actually a mistake that the agent recovered from. How does the baseline subtraction help correct this?"
+  answer="Without a baseline: every action gets updated positively by +8, including the mistake at step 3. With a baseline V(s): if the expected value at step 3 was +10 (the agent was in a strong position), the advantage is 8−10 = −2. That action gets pushed DOWN even though the overall episode was positive. The baseline captures 'what should have happened given the state' — if the actual return was lower than the baseline at step 3, that action was likely suboptimal, and the policy is correctly nudged away from it. This is why advantage = G − V is much more informative than raw return G."
+/>
+
+## The Policy Gradient Family Tree
+
+<MermaidDiagram chart={`graph TD
+  classDef root fill:#6366f1,stroke:#4f46e5,color:#fff
+  classDef early fill:#dbeafe,stroke:#60a5fa,color:#1e3a8a
+  classDef mid fill:#ede9fe,stroke:#8b5cf6,color:#4c1d95
+  classDef modern fill:#dcfce7,stroke:#4ade80,color:#14532d
+
+  PGT["Policy Gradient Theorem\n(Williams 1992)"] --> REINFORCE["REINFORCE\n(pure policy gradient)"]
+  PGT --> AC["Actor-Critic\n(Chapter 26)"]
+  AC --> A3C["A3C / A2C\n(parallel actors)"]
+  AC --> PPO["PPO (Chapter 27)\nstandard for LLMs"]
+  AC --> SAC["SAC\n(continuous control)"]
+  AC --> TRPO["TRPO\n(trust region)"]
+
+  class PGT root
+  class REINFORCE early
+  class AC mid
+  class A3C,PPO,SAC,TRPO modern`}
+/>

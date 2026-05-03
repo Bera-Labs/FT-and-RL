@@ -1,0 +1,195 @@
+import AnalogyCard from '@/components/interactive/AnalogyCard';
+import StepWalkthrough from '@/components/interactive/StepWalkthrough';
+import MermaidDiagram from '@/components/interactive/MermaidDiagram';
+import ConceptCheck from '@/components/interactive/ConceptCheck';
+
+<AnalogyCard
+  title="Teaching a neural network to read the GPS map"
+  body="In Chapter 23, Q-learning built a giant lookup table — one entry for every (intersection, direction) pair. This worked for small towns. But imagine a city with trillions of intersections — too many to list. You'd need a smarter approach: instead of memorizing every entry, you learn to recognize patterns. 'Wide roads near downtown tend to be fast. Narrow residential streets near the hospital are slow.' You generalize from what you've seen to places you haven't visited yet. This is exactly what Deep Q-Networks do: they replace the lookup table with a neural network that can generalize from seen states to unseen ones — making Q-learning work for the vast, continuous state spaces of real-world problems."
+/>
+
+## The Scale Problem
+
+Tabular Q-learning hits a wall with large state spaces. DQN (Deep Q-Network, Mnih et al., 2013) solved this by replacing the Q-table with a deep neural network.
+
+<MermaidDiagram chart={`graph LR
+  classDef tabular fill:#fee2e2,stroke:#f87171,color:#7f1d1d
+  classDef deep fill:#dcfce7,stroke:#4ade80,color:#14532d
+
+  TAB["Tabular Q-learning\n──────────────────\nQ-table: rows × cols × actions\nAtari: 84×84×4 pixels → 10^28000 states\nInfeasible: can't store the table\nNo generalization across similar states"]
+  DQN["Deep Q-Network (DQN)\n──────────────────\nQ_θ(s,a): neural network\nAtari: CNN processes pixels\n✓ Generalizes across similar states\n✓ No table — just 10M weights\n✓ Same RL update rule, different Q representation"]
+
+  class TAB tabular
+  class DQN deep`}
+/>
+
+<StepWalkthrough
+  steps={[
+    {
+      title: "Step 1: Replace the table with a neural network",
+      body: "In DQN, the Q-function is approximated by a neural network Q_θ(s, a), where θ represents the network's weights.\n\nInput: the current state s (e.g., 84×84×4 Atari screen pixels stacked over 4 frames to capture motion)\nOutput: Q values for all actions simultaneously (e.g., 18 numbers for 18 Atari buttons)\n\nArchitecture for Atari:\n• 3 convolutional layers (extract visual features from pixels)\n• 2 fully connected layers\n• Output: one Q-value per action\n\nTraining: just like supervised learning, but the 'labels' come from the Bellman equation targets, not human annotation.",
+      whyItMatters: "A neural network with 10M parameters can represent Q-values for 10^28000 states — not by memorizing them all, but by learning the underlying patterns. This generalization is why DQN can learn to play Atari from raw pixels after millions of training steps.",
+      diagram: `graph LR
+  classDef inp fill:#dbeafe,stroke:#60a5fa,color:#1e3a8a
+  classDef cnn fill:#ede9fe,stroke:#8b5cf6,color:#4c1d95
+  classDef fc fill:#6366f1,stroke:#4f46e5,color:#fff
+  classDef out fill:#dcfce7,stroke:#4ade80,color:#14532d
+
+  PIX(["84×84×4 pixels\n(4 stacked frames)"]) --> C1["Conv layer 1\n8×8 filters, stride 4\n→ features"]
+  C1 --> C2["Conv layer 2\n4×4 filters, stride 2"]
+  C2 --> C3["Conv layer 3\n3×3 filters, stride 1"]
+  C3 --> FC1["Fully connected\n512 units"]
+  FC1 --> QVALS["Q-values\n[Q(s,a₁), Q(s,a₂), ..., Q(s,a₁₈)]"]
+
+  class PIX inp
+  class C1,C2,C3 cnn
+  class FC1 fc
+  class QVALS out`
+    },
+    {
+      title: "Step 2: Experience replay",
+      body: "Naive online Q-learning (update immediately after each step) doesn't work well with neural networks because:\n• Consecutive experiences are highly correlated — learning from them sequentially creates feedback loops\n• A single experience is wasted after one update\n\nExperience replay fixes this:\n1. Store every (s, a, r, s') tuple in a replay buffer (capacity: ~1 million transitions)\n2. At each training step, sample a random mini-batch from the buffer (e.g., 32 transitions)\n3. Compute Q-learning updates on the mini-batch\n\nBenefits:\n• Breaks correlation: random sampling ensures mini-batches contain diverse, independent experiences\n• Reuses data: each experience is used for multiple updates (far more efficient)\n• Stabilizes training: less sensitive to the order experiences were collected",
+      whyItMatters: "Experience replay was one of the two key innovations that made DQN work. Without it, the neural network's weights oscillate and diverge — the feedback loop between the policy and the training data causes instability.",
+      diagram: `graph TD
+  classDef collect fill:#dbeafe,stroke:#60a5fa,color:#1e3a8a
+  classDef buffer fill:#6366f1,stroke:#4f46e5,color:#fff
+  classDef train fill:#dcfce7,stroke:#4ade80,color:#14532d
+
+  PLAY["Agent plays game\ncollects (s,a,r,s')"] --> BUF[("Replay buffer\n1M transitions\nFIFO queue")]
+  BUF --> SAMPLE["Random mini-batch\n32 transitions sampled"]
+  SAMPLE --> UPDATE["Compute Q-learning loss\nUpdate network weights"]
+  UPDATE --> PLAY
+
+  class PLAY collect
+  class BUF buffer
+  class SAMPLE,UPDATE train`
+    },
+    {
+      title: "Step 3: Target network — stabilizing the training target",
+      body: "A second key DQN innovation: the target network.\n\nProblem: in Q-learning, the update target is r + γ × max Q_θ(s', a'). But θ (the network weights) also changes every step. So we're chasing a moving target — the Q-values we're trying to match keep changing as we train.\n\nFix: maintain two networks:\n• Online network Q_θ: updated every step (learns quickly)\n• Target network Q_θ⁻: copy of online network, updated only every 10,000 steps\n\nUse the target network to compute the Bellman targets: r + γ × max Q_{θ⁻}(s', a')\n\nNow the target is fixed for 10,000 steps — much more stable to train toward.",
+      whyItMatters: "Without the target network, training often diverges. You're updating your estimates based on estimates that are themselves changing — like trying to balance a ruler on your finger while the floor is also moving. The target network freezes the floor.",
+      diagram: `graph LR
+  classDef online fill:#6366f1,stroke:#4f46e5,color:#fff
+  classDef target fill:#dbeafe,stroke:#60a5fa,color:#1e3a8a
+  classDef stable fill:#dcfce7,stroke:#4ade80,color:#14532d
+
+  ON["Online network Q_θ\nupdated every step\n→ learns fast"] --"every 10,000 steps: copy weights"--> TN["Target network Q_θ⁻\nfrozen between copies\n→ stable targets"]
+  TN --> BELLMAN["Bellman target\nr + γ × max Q_θ⁻(s', a')\n(stable for 10,000 steps)"]
+  BELLMAN --> LOSS["Loss = (Q_θ(s,a) − target)²\nbackprop → update θ only"]
+
+  class ON online
+  class TN target
+  class BELLMAN,LOSS stable`
+    },
+    {
+      title: "Step 4: The full DQN training loop",
+      body: "Putting it all together:\n\n1. Initialize online network Q_θ and target network Q_θ⁻ (same weights)\n2. Initialize replay buffer B\n3. For each step:\n   a. Select action: ε-greedy using Q_θ\n   b. Execute action, observe r and s'\n   c. Store (s, a, r, s') in B\n   d. Sample random mini-batch from B\n   e. Compute target: y = r + γ × max_{a'} Q_{θ⁻}(s', a')\n   f. Loss: L = (Q_θ(s, a) − y)²\n   g. Gradient step: update θ to minimize L\n   h. Every 10,000 steps: θ⁻ ← θ\n4. Repeat millions of times",
+      whyItMatters: "The two innovations — experience replay and target network — work together. Replay breaks correlation AND reuses data; target network stabilizes the training signal. Together, they're the reason DQN could master 49 Atari games from raw pixels, a result that surprised the entire research community in 2013.",
+      diagram: `graph TD
+  classDef init fill:#dbeafe,stroke:#60a5fa,color:#1e3a8a
+  classDef act fill:#ede9fe,stroke:#8b5cf6,color:#4c1d95
+  classDef train fill:#6366f1,stroke:#4f46e5,color:#fff
+  classDef sync fill:#dcfce7,stroke:#4ade80,color:#14532d
+
+  INIT["Init Q_θ, Q_θ⁻, replay buffer"] --> ACT["ε-greedy action\nusing Q_θ"]
+  ACT --> ENV["Execute → (s,a,r,s')"]
+  ENV --> STORE["Store in replay buffer"]
+  STORE --> BATCH["Sample 32 transitions\nfrom buffer"]
+  BATCH --> TARGET["Compute targets:\ny = r + γ max Q_θ⁻(s',a')"]
+  TARGET --> LOSS["Loss = (Q_θ(s,a) − y)²\nbackprop → update θ"]
+  LOSS --> SYNC{"Every 10k steps?"}
+  SYNC --"Yes"--> COPY["θ⁻ ← θ\n(sync target network)"]
+  SYNC --"No"--> ACT
+  COPY --> ACT
+
+  class INIT init
+  class ACT,ENV act
+  class BATCH,TARGET,LOSS train
+  class SYNC,COPY sync`
+    },
+    {
+      title: "Step 5: DQN improvements — Double DQN and Dueling DQN",
+      body: "The original DQN has known issues. Two important fixes:\n\n• Double DQN: standard DQN tends to overestimate Q-values (using the same network to both select and evaluate the best action introduces positive bias). Fix: use online network to select the action, target network to evaluate it:\ntarget = r + γ × Q_{θ⁻}(s', argmax_{a'} Q_θ(s', a'))\n\n• Dueling DQN: split the network into two streams:\n  - Value stream V(s): how good is this state?\n  - Advantage stream A(s,a): how much better is action a vs. average?\n  Q(s,a) = V(s) + A(s,a) − mean A(s,·)\n  This helps when many actions have similar Q-values — the value stream learns state quality even without action differences.",
+      whyItMatters: "Double DQN is a small change that consistently improves performance across games. Dueling DQN improves performance in environments where many actions have similar long-term value (e.g., moving around an empty area — direction barely matters). Together they form Double Dueling DQN, often the default in research.",
+      diagram: `graph LR
+  classDef orig fill:#fef3c7,stroke:#f59e0b,color:#78350f
+  classDef imp fill:#dcfce7,stroke:#4ade80,color:#14532d
+
+  DQN["Original DQN\ntarget: r + γ max Q_θ⁻(s',a')\n(same network selects and evaluates\n→ overestimation bias)"] --> DDQN["Double DQN\ntarget: r + γ Q_θ⁻(s', argmax Q_θ(s',a'))\n(online selects, target evaluates\n→ less overestimation)"]
+  DQN --> DUEL["Dueling DQN\nQ(s,a) = V(s) + A(s,a)\n(separate value and advantage streams\n→ better generalization)"]
+
+  class DQN orig
+  class DDQN,DUEL imp`
+    },
+    {
+      title: "Step 6: When DQN works and when it doesn't",
+      body: "DQN works well when:\n• State is visual / can be represented as a fixed-size tensor\n• Action space is discrete and relatively small (18 Atari buttons, hundreds of chess moves)\n• Environment is fully observable (or can be made so by stacking frames)\n• Many training episodes are possible (games can be played millions of times)\n\nDQN struggles when:\n• Action space is continuous (can't take argmax over infinite actions) → use DDPG, SAC, or PPO instead\n• Episodes are very long with sparse rewards → policy gradients often work better\n• The environment can't be run millions of times (real robots, medical trials) → need more sample-efficient methods",
+      whyItMatters: "DQN's limitation with continuous actions is directly relevant to language models: at each step, the LM outputs a probability distribution over 50,000 tokens — which is a discrete but very large action space. This makes DQN impractical for LLMs; PPO (Chapter 27) handles large discrete and continuous spaces better.",
+      diagram: `graph LR
+  classDef good fill:#dcfce7,stroke:#4ade80,color:#14532d
+  classDef bad fill:#fee2e2,stroke:#f87171,color:#7f1d1d
+
+  WORKS["DQN works well\n──────────────────\nAtari games (discrete buttons)\nBoard games (discrete moves)\nSimulation with fast resets\nVisual observations (pixels)"]
+  FAILS["DQN struggles\n──────────────────\nContinuous actions (robotics)\nVery sparse rewards\nReal-world (can't reset millions of times)\nHuge action spaces (50k vocab → use PPO)"]
+
+  class WORKS good
+  class FAILS bad`
+    },
+  ]}
+/>
+
+<ConceptCheck
+  question="Why does DQN use a replay buffer instead of learning from each experience immediately? Give two reasons."
+  answer="(1) Breaking correlations: consecutive game frames are highly correlated — if you just saw frame 847, frame 848 is almost identical. Learning from correlated samples causes the neural network to overfit to recent local patterns rather than learning general Q-values. Random sampling from the replay buffer ensures each training batch contains diverse, decorrelated experiences. (2) Data efficiency: each (s, a, r, s') tuple stored in the replay buffer can be used for multiple gradient updates, not just one. This dramatically improves sample efficiency — you get more learning from each environment interaction."
+/>
+
+## Prioritized Experience Replay
+
+Standard experience replay samples transitions uniformly at random — every stored experience is equally likely to be selected. This is wasteful: a transition where the agent discovered a key shortcut or made a critical mistake is just as likely to be skipped as a boring, already-learned transition.
+
+**Prioritized Experience Replay (PER)** assigns a priority to each stored transition and samples high-priority transitions more often. The priority is based on the TD error |δ| = |r + γ max Q(s') − Q(s, a)| — transitions where the model is most wrong get the highest priority.
+
+<MermaidDiagram chart={`graph TD
+  classDef high fill:#fee2e2,stroke:#f87171,color:#7f1d1d
+  classDef mid fill:#fef3c7,stroke:#f59e0b,color:#78350f
+  classDef low fill:#dcfce7,stroke:#4ade80,color:#14532d
+  classDef fix fill:#6366f1,stroke:#4f46e5,color:#fff
+
+  UNIF["Uniform sampling\nAll transitions equally likely\nBoring transitions sampled as often\nas critical discoveries\n→ slow learning from rare events"]
+  PER["Prioritized sampling\nP(i) ∝ |δᵢ|^α\nhigh TD error = model is wrong here\n→ sample it more often\n→ faster learning on hard transitions"]
+  IS["Importance sampling correction\nw_i = (1 / N·P(i))^β\nDivide gradient by w_i\nCorrects statistical bias from\nnon-uniform sampling"]
+
+  UNIF --> PER --> IS
+
+  class UNIF mid
+  class PER high
+  class IS fix`}
+/>
+
+**How it works:**
+
+1. When a transition is stored, assign priority p_i = |δ_i| + ε (ε prevents zero-priority transitions from never being sampled)
+2. Sampling probability: P(i) = p_i^α / Σ p_j^α — the exponent α controls how aggressively to prioritize (α=0 → uniform, α=1 → fully proportional)
+3. After computing the TD error for a sampled transition, update its priority to the new |δ_i|
+4. Apply importance-sampling weights to correct the gradient bias introduced by non-uniform sampling
+
+**Implementation:** a sum tree data structure (binary tree where parent = sum of children) makes priority-proportional sampling and priority updates O(log N) instead of O(N). This is what makes PER practical for buffers of 1 million transitions.
+
+**Gain:** PER typically improves DQN performance by ~20–30% on Atari games and can reduce the number of environment interactions needed by 2–3×. It's part of the Rainbow DQN combination.
+
+## DQN's Legacy
+
+DQN was a landmark paper — it demonstrated that a single neural network architecture, trained with RL, could reach human-level performance on dozens of games from raw pixels, with no game-specific engineering. It launched modern deep RL.
+
+<MermaidDiagram chart={`graph LR
+  classDef dqn fill:#6366f1,stroke:#4f46e5,color:#fff
+  classDef child fill:#dcfce7,stroke:#4ade80,color:#14532d
+
+  DQN["DQN (2013)\nDeep Q-Network\nAtari from pixels"] --> DDQN["Double DQN (2015)\nLess overestimation"]
+  DQN --> DUELING["Dueling DQN (2015)\nSeparate V + A streams"]
+  DQN --> PER["Prioritized Experience Replay\nSample important transitions more"]
+  DQN --> RAINBOW["Rainbow (2017)\nCombines 6 DQN improvements\nSOTA on Atari"]
+
+  class DQN dqn
+  class DDQN,DUELING,PER,RAINBOW child`}
+/>

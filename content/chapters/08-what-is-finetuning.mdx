@@ -1,0 +1,207 @@
+import AnalogyCard from '@/components/interactive/AnalogyCard';
+import StepWalkthrough from '@/components/interactive/StepWalkthrough';
+import MermaidDiagram from '@/components/interactive/MermaidDiagram';
+import ConceptCheck from '@/components/interactive/ConceptCheck';
+
+<AnalogyCard
+  title="Retraining an expert chef to specialize in sushi"
+  body="Imagine hiring a world-class chef who trained at culinary school for years — they know every technique, every flavor combination, every kitchen rule. But your restaurant only serves sushi. You don't send them back to culinary school. Instead, you spend a week teaching them specifically about sushi: fish selection, knife angles, rice seasoning, plating style. They already know how to cook; you're redirecting their expertise to your specific need. Fine-tuning works exactly the same way — you take a model that already understands language deeply, then train it further on your specific task so it becomes an expert at exactly what you need."
+/>
+
+## What is Fine-Tuning?
+
+A pre-trained model (Chapter 6) knows a lot — grammar, facts, reasoning patterns, writing styles. But it was trained to predict text in general. Your application needs something more specific: a customer service chatbot, a medical report summarizer, a code reviewer, a sentiment classifier.
+
+Fine-tuning is the process of **continuing training** a pre-trained model on a smaller, task-specific dataset so it learns to excel at your particular job.
+
+<MermaidDiagram chart={`graph LR
+  classDef base fill:#dbeafe,stroke:#60a5fa,color:#1e3a8a
+  classDef ft fill:#ede9fe,stroke:#8b5cf6,color:#4c1d95
+  classDef result fill:#dcfce7,stroke:#4ade80,color:#14532d
+
+  B["Base model\nLlama-3-8B\n(general language understanding)\n500B tokens of training"] --> FT["Fine-tuning\nyour task-specific dataset\n(1,000 – 100,000 examples)\nhours to days"]
+  FT --> R["Fine-tuned model\nExpert at your specific task\n✓ Your domain vocabulary\n✓ Your output format\n✓ Your tone and style"]
+
+  class B base
+  class FT ft
+  class R result`}
+/>
+
+<StepWalkthrough
+  steps={[
+    {
+      title: "Step 1: Start from a pre-trained checkpoint",
+      body: "Fine-tuning begins by loading the weights of a pre-trained model — the starting point that embodies millions of dollars of training compute. This checkpoint already 'knows' language deeply.\n\nYou pick the base model based on:\n• Size: do you need a 7B model (one GPU) or a 70B model (several GPUs)?\n• Architecture: instruction-tuned base (chat-ready) or raw base (more flexible)?\n• License: is commercial use allowed?\n\nPopular starting points: Llama-3-8B, Mistral-7B, Gemma-7B, Phi-3.",
+      whyItMatters: "The pre-trained checkpoint is doing most of the heavy lifting. A better starting point = a better fine-tuned result. A 7B model fine-tuned well will often beat a 70B model fine-tuned poorly.",
+      diagram: `graph LR
+  classDef hub fill:#6366f1,stroke:#4f46e5,color:#fff
+  classDef model fill:#dbeafe,stroke:#60a5fa,color:#1e3a8a
+  classDef check fill:#dcfce7,stroke:#4ade80,color:#14532d
+
+  HUB["🤗 Hugging Face Hub"] --> M1["Llama-3-8B\n8B params · 16GB"]
+  HUB --> M2["Mistral-7B\n7B params · 14GB"]
+  HUB --> M3["Gemma-7B\n7B params · 14GB"]
+  M1 --> U["Load weights\nonto your GPU"]
+  M2 --> U
+  M3 --> U
+
+  class HUB hub
+  class M1,M2,M3 model
+  class U check`
+    },
+    {
+      title: "Step 2: Prepare your task-specific dataset",
+      body: "Fine-tuning needs examples of the behavior you want. The format depends on your task:\n\n• Instruction-following: pairs of (instruction, ideal response)\n• Classification: pairs of (text, label)\n• Summarization: pairs of (long text, summary)\n• Dialogue: multi-turn (user: ..., assistant: ...) conversations\n\nDataset size: anywhere from 500 to 100,000 examples. Quality matters more than quantity — 1,000 carefully curated examples often beats 50,000 noisy ones.\n\nEach example is formatted using the model's chat template (a specific token format like [INST] ... [/INST]) so the model knows the structure.",
+      whyItMatters: "Garbage in, garbage out applies double in fine-tuning. The model amplifies what it sees. If your training examples contain bad formatting, off-brand tone, or factual errors, the fine-tuned model will too.",
+      diagram: `graph TD
+  classDef inp fill:#dbeafe,stroke:#60a5fa,color:#1e3a8a
+  classDef fmt fill:#ede9fe,stroke:#8b5cf6,color:#4c1d95
+  classDef out fill:#dcfce7,stroke:#4ade80,color:#14532d
+
+  R["Raw examples\n'Summarize this article...\nOutput: ...'"] --> T["Apply chat template\n[INST] Summarize this article... [/INST]\n The article discusses..."]
+  T --> TOK["Tokenize\n[1, 2954, 445, ...]"]
+  TOK --> DS[("Fine-tuning dataset\nready for training")]
+
+  class R inp
+  class T fmt
+  class TOK,DS out`
+    },
+    {
+      title: "Step 3: The training loop (same mechanics, smaller scale)",
+      body: "Fine-tuning uses exactly the same training loop as pre-training: forward pass, compute loss, backprop, update weights. The difference is scale:\n\n• Pre-training: 500 billion tokens, weeks on thousands of GPUs\n• Fine-tuning: millions of tokens, hours on one or a few GPUs\n\nThe loss function is still cross-entropy — we're still predicting the next token — but now we're computing loss only on the response part of each example, not the instruction part. We don't want the model to 'learn' the question, just the answer.",
+      whyItMatters: "The mechanics being identical to pre-training is what makes fine-tuning tractable. All the infrastructure (optimizers, learning rate schedules, gradient checkpointing) transfers directly — you just run it on a smaller problem.",
+      diagram: `graph LR
+  classDef data fill:#dbeafe,stroke:#60a5fa,color:#1e3a8a
+  classDef step fill:#6366f1,stroke:#4f46e5,color:#fff
+  classDef loss fill:#fee2e2,stroke:#f87171,color:#7f1d1d
+  classDef update fill:#dcfce7,stroke:#4ade80,color:#14532d
+
+  B(["Batch of examples"]) --> FWD["Forward pass\nmodel generates continuation"]
+  FWD --> L["Loss\ncompared to target response only\n(not the instruction tokens)"]
+  L --> BP["Backprop\ncompute gradients"]
+  BP --> UPD["Update weights\nw = w − lr × ∇"]
+  UPD --> B
+
+  class B data
+  class FWD,BP step
+  class L loss
+  class UPD update`
+    },
+    {
+      title: "Step 4: Use a lower learning rate than pre-training",
+      body: "The pre-trained model has already found a good region of the loss landscape. Fine-tuning should nudge it in the right direction, not leap away from everything it learned.\n\nTypical fine-tuning learning rates: 1e-5 to 1e-4 (10× to 100× smaller than pre-training rates).\n\nIf the learning rate is too high, you'll overwrite the general knowledge the model learned — a phenomenon called catastrophic forgetting. The model becomes good at your task but loses basic coherence.",
+      whyItMatters: "Catastrophic forgetting is the most common cause of 'my fine-tuned model became dumber.' A low learning rate preserves the pre-trained knowledge while adding your task-specific specialization on top.",
+      diagram: `graph LR
+  classDef high fill:#fee2e2,stroke:#f87171,color:#7f1d1d
+  classDef good fill:#dcfce7,stroke:#4ade80,color:#14532d
+  classDef warn fill:#fef3c7,stroke:#f59e0b,color:#78350f
+
+  H["lr = 1e-3 (too high)\n❌ Catastrophic forgetting\nModel loses general ability\nBecomes incoherent"] --> C
+  G["lr = 1e-5 (good)\n✅ Gradual specialization\nRetains general knowledge\nLearns task-specific behavior"] --> C
+  L["lr = 1e-7 (too low)\n⚠️ Barely learns anything\nTraining takes forever\nMinimal improvement"] --> C
+  C["Your target:\nlr between 1e-5 and 1e-4"]
+
+  class H high
+  class G good
+  class L warn`
+    },
+    {
+      title: "Step 5: Monitor for overfitting (it happens fast)",
+      body: "Fine-tuning datasets are small relative to the model's capacity. The model can overfit to your examples in just a few epochs — memorizing them rather than learning the underlying pattern.\n\nSigns of overfitting:\n• Training loss drops sharply, validation loss rises\n• Model produces correct outputs for training examples but fails on similar new ones\n• Model copies phrases verbatim from training data\n\nFixes: early stopping, fewer epochs (often just 1–3 epochs is enough), lower learning rate, larger dataset.",
+      whyItMatters: "With fine-tuning, you're often better off training for 1–2 epochs than 10. More is not better. The model needs just enough new training to specialize, not enough to forget everything else.",
+      diagram: `graph LR
+  classDef good fill:#dcfce7,stroke:#4ade80,color:#14532d
+  classDef warn fill:#fef3c7,stroke:#f59e0b,color:#78350f
+  classDef bad fill:#fee2e2,stroke:#f87171,color:#7f1d1d
+
+  E1["Epoch 1\nTrain loss: 1.8\nVal loss: 1.9\n(healthy)"] --> E2["Epoch 2\nTrain loss: 1.2\nVal loss: 1.3\n✅ save checkpoint"]
+  E2 --> E3["Epoch 3\nTrain loss: 0.9\nVal loss: 1.5\n⚠️ diverging"]
+  E3 --> E5["Epoch 5\nTrain loss: 0.4\nVal loss: 2.8\n❌ overfit — stop!"]
+
+  class E1,E2 good
+  class E3 warn
+  class E5 bad`
+    },
+    {
+      title: "Step 6: Evaluate and deploy",
+      body: "Once training completes, evaluate the model on a held-out test set. Metrics depend on your task:\n\n• Classification: accuracy, F1, precision/recall\n• Generation: ROUGE (overlap with reference), human eval\n• Instruction-following: pass rate on a rubric or benchmark\n\nFor language model tasks, automatic metrics often miss quality — human evaluation or an LLM-as-judge setup (using a stronger model to rate outputs) is often the most reliable signal.\n\nOnce satisfied, save the final checkpoint weights. This is your deployable model.",
+      whyItMatters: "A fine-tuned model that scores well on benchmarks but sounds robotic or makes subtle errors in practice is a failure. Always test with real representative examples before calling the model ready.",
+      diagram: `graph TD
+  classDef model fill:#ede9fe,stroke:#8b5cf6,color:#4c1d95
+  classDef eval fill:#fef3c7,stroke:#f59e0b,color:#78350f
+  classDef pass fill:#dcfce7,stroke:#4ade80,color:#14532d
+  classDef fail fill:#fee2e2,stroke:#f87171,color:#7f1d1d
+
+  M["Fine-tuned model\ncheckpoint"] --> AUTO["Automatic metrics\nROUGE · accuracy · F1"]
+  M --> HUMAN["Human eval\n'Does this output make sense?'"]
+  M --> LLM["LLM-as-judge\nGPT-4 rates outputs 1–5"]
+  AUTO & HUMAN & LLM --> D{"Passes\nquality bar?"}
+  D --"Yes"--> DEPLOY["✅ Deploy to production"]
+  D --"No"--> FIX["More data or\nadjust hyperparameters"]
+
+  class M model
+  class AUTO,HUMAN,LLM eval
+  class DEPLOY pass
+  class FIX fail`
+    },
+  ]}
+/>
+
+<ConceptCheck
+  question="Why do we compute the loss only on the response tokens during fine-tuning, and not on the instruction/prompt tokens?"
+  answer="Because we want the model to learn how to respond, not how to ask questions. If we included the instruction tokens in the loss, the model would spend training capacity learning to predict the instruction text — which it already knows. We only want to teach it the mapping from instruction to ideal response. Computing loss only on response tokens focuses the training signal exactly where we want learning to happen."
+/>
+
+## Fine-Tuning vs. Few-Shot Prompting
+
+Before fine-tuning, ask: can you solve the problem with better prompting?
+
+<MermaidDiagram chart={`graph TD
+  classDef prompt fill:#dbeafe,stroke:#60a5fa,color:#1e3a8a
+  classDef ft fill:#ede9fe,stroke:#8b5cf6,color:#4c1d95
+  classDef both fill:#dcfce7,stroke:#4ade80,color:#14532d
+
+  P["Few-shot prompting\n──────────────────\n✓ Zero setup cost\n✓ Easy to change\n✓ No GPU needed\n✗ Inconsistent outputs\n✗ Context window limits\n✗ Expensive at scale\n(pay per token)"]
+  F["Fine-tuning\n──────────────────\n✓ Consistent outputs\n✓ No context window cost\n✓ Cheap inference at scale\n✓ Can teach new styles/domains\n✗ Needs labeled data\n✗ Upfront training cost\n✗ Slower to iterate"]
+
+  class P prompt
+  class F ft`}
+/>
+
+Use few-shot prompting first. Fine-tune when you need consistency, want to bake in domain knowledge, or need cost-efficient inference at scale.
+
+## When Fine-Tuning Isn't Enough: Domain-Adaptive Pre-Training
+
+Fine-tuning excels at behavioral change — output format, tone, task specialization. But sometimes the model lacks the underlying knowledge to perform your task well, because your domain was underrepresented in the original pre-training corpus.
+
+**Domain-Adaptive Pre-Training (DAPT)** bridges this gap. Before fine-tuning, you run next-token prediction on a large unlabeled corpus from your domain — medical papers, legal documents, financial filings, niche code repositories. This builds the domain's vocabulary, concepts, and reasoning patterns into the model's weights. Fine-tuning then has a much stronger foundation to work from.
+
+<MermaidDiagram chart={`graph LR
+  classDef base fill:#dbeafe,stroke:#60a5fa,color:#1e3a8a
+  classDef dapt fill:#fef3c7,stroke:#f59e0b,color:#78350f
+  classDef ft fill:#ede9fe,stroke:#8b5cf6,color:#4c1d95
+  classDef result fill:#dcfce7,stroke:#4ade80,color:#14532d
+
+  B["Base model\n(general internet text)\nMay lack domain knowledge"] --> DAPT["Domain-Adaptive Pre-Training\nNext-token prediction on\ndomain corpus (1B–100B tokens)\nBuilds domain knowledge into weights"]
+  DAPT --> FT["Supervised Fine-Tuning\nLabeled task examples\n(1k–100k pairs)"]
+  FT --> R["Domain-expert model\n✓ Deep domain knowledge\n✓ Task-specific behavior"]
+
+  B --> SKIP_DAPT["Skip DAPT:\nDirect Fine-Tuning\n(works for most tasks)"]
+  SKIP_DAPT --> FT
+
+  class B base
+  class DAPT dapt
+  class FT ft
+  class R result
+  class SKIP_DAPT base`}
+/>
+
+**When to use DAPT:**
+- Your domain has specialized vocabulary the base model rarely saw (radiology reports, legal Latin, assembly code)
+- Task-specific fine-tuning gives poor results even with good data and hyperparameters
+- You have access to a large unlabeled domain corpus (millions of documents)
+
+**When to skip DAPT:**
+- Your domain uses general language (customer service, marketing copy, general Q&A)
+- You have limited compute — DAPT requires the same infrastructure as pre-training
+- A domain-adapted base model already exists (BioBERT for bio, CodeLlama for code)

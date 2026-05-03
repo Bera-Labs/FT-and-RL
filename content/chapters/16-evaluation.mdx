@@ -1,0 +1,156 @@
+import AnalogyCard from '@/components/interactive/AnalogyCard';
+import StepWalkthrough from '@/components/interactive/StepWalkthrough';
+import MermaidDiagram from '@/components/interactive/MermaidDiagram';
+import ConceptCheck from '@/components/interactive/ConceptCheck';
+
+<AnalogyCard
+  title="Grading an exam with a rubric"
+  body="Imagine grading a student's essay. You could just read it and say 'this seems good' — but that's subjective and inconsistent. A rubric gives you structure: five points for thesis clarity, five for supporting evidence, five for grammar, five for conclusion. Each criterion is scored independently. Total them up, you get a defensible, reproducible grade. Evaluating a fine-tuned model is the same challenge: subjective impressions mislead. You need a rubric — a set of specific metrics, each measuring something concrete — so that two people running the same evaluation reach the same conclusion, and so that model v2 is genuinely better than model v1."
+/>
+
+## Why Evaluation is Hard
+
+Language model outputs are open-ended and context-dependent. 'Is this a good summary?' depends on what 'good' means to the reader. Automated metrics can give you numbers quickly, but those numbers sometimes miss what actually matters.
+
+<MermaidDiagram chart={`graph TD
+  classDef easy fill:#dcfce7,stroke:#4ade80,color:#14532d
+  classDef hard fill:#fee2e2,stroke:#f87171,color:#7f1d1d
+  classDef mid fill:#fef3c7,stroke:#f59e0b,color:#78350f
+
+  EASY["Easy to evaluate automatically\n──────────────────────────────\nClassification accuracy\nExact match (Q&A with fixed answers)\nCode pass rate (run the tests)\nMath answers (check the number)"]
+  MID["Partially automatable\n──────────────────────────────\nSummarization (ROUGE score)\nTranslation (BLEU score)\nInstruction following (LLM-as-judge)"]
+  HARD["Hard to evaluate automatically\n──────────────────────────────\nTone and style\nCreativity\nNuance and appropriateness\nFactual accuracy (subtle errors)\nSafety / harmlessness"]
+
+  class EASY easy
+  class MID mid
+  class HARD hard`}
+/>
+
+<StepWalkthrough
+  steps={[
+    {
+      title: "Step 1: Exact match and accuracy metrics",
+      body: "For classification and structured output tasks, exact match is the cleanest metric:\n\n• Accuracy: fraction of examples where the model's output exactly matches the label\n• Precision: of the examples the model labeled positive, what fraction were actually positive?\n• Recall: of all actually positive examples, what fraction did the model find?\n• F1 score: harmonic mean of precision and recall — best single metric when classes are imbalanced\n\nExample: if your model classifies medical reports as 'urgent' or 'routine', you care more about recall for 'urgent' (missing an urgent case is worse than a false alarm) than raw accuracy.",
+      whyItMatters: "Accuracy alone can be misleading when classes are imbalanced. If 95% of emails are not spam, a model that predicts 'not spam' for everything achieves 95% accuracy — but catches zero spam. Always check F1 or precision/recall for imbalanced problems.",
+      diagram: `graph TD
+  classDef metric fill:#6366f1,stroke:#4f46e5,color:#fff
+  classDef good fill:#dcfce7,stroke:#4ade80,color:#14532d
+  classDef warn fill:#fef3c7,stroke:#f59e0b,color:#78350f
+
+  ACC["Accuracy\nCorrect / Total\nGood when classes balanced"] --> F1["F1 Score\n2 × P × R / (P + R)\nBest single metric for imbalanced"]
+  PREC["Precision\nTrue Positives / All Predicted Positive\n'When it says yes, is it right?'"] --> F1
+  REC["Recall\nTrue Positives / All Actual Positive\n'Does it find all the yes cases?'"] --> F1
+
+  class ACC,PREC,REC,F1 metric`
+    },
+    {
+      title: "Step 2: ROUGE and BLEU for generation tasks",
+      body: "For summarization and translation, we can't expect exact matches. Instead, we measure overlap with a reference answer:\n\n• ROUGE-N: fraction of N-grams (word sequences of length N) in the reference that appear in the output. ROUGE-1 measures unigram overlap; ROUGE-2 measures bigram overlap.\n• ROUGE-L: longest common subsequence between reference and output\n• BLEU: measures N-gram precision from the output's perspective (commonly used for translation)\n\nLimitation: ROUGE/BLEU measure word overlap, not meaning. 'The dog chased the cat' and 'The feline was pursued by the canine' have zero ROUGE overlap but identical meaning.",
+      whyItMatters: "ROUGE is useful as a quick sanity check and for comparing model versions consistently. But never ship a model based solely on ROUGE score — always look at actual outputs. A high ROUGE score can hide verbatim copying, circular references, or outputs that match the words but not the intent.",
+      diagram: `graph LR
+  classDef ref fill:#dbeafe,stroke:#60a5fa,color:#1e3a8a
+  classDef out fill:#ede9fe,stroke:#8b5cf6,color:#4c1d95
+  classDef score fill:#6366f1,stroke:#4f46e5,color:#fff
+
+  REF["Reference summary:\n'The company reported strong\nQ3 earnings with 15% growth'"] --> OVERLAP
+  OUT["Model output:\n'Company had strong earnings\nin Q3 with growth of 15%'"] --> OVERLAP
+  OVERLAP["Overlapping 1-grams: company, strong,\nearnings, Q3, with, growth, 15%\nROUGE-1 = 7/9 = 0.78"]
+
+  class REF ref
+  class OUT out
+  class OVERLAP score`
+    },
+    {
+      title: "Step 3: LLM-as-judge — using a stronger model to evaluate",
+      body: "A powerful modern approach: use a capable model (GPT-4, Claude) to evaluate the outputs of your fine-tuned model. You write a scoring rubric in the prompt and ask the evaluator model to score each output.\n\nExample rubric for customer support:\n'Score this response 1–5 on: (1) answers the question, (2) professional tone, (3) accurate information, (4) appropriate length. Output: {score: X, reason: ...}'\n\nAdvantages: captures nuance that ROUGE misses; correlates well with human judgment; scalable (no human graders needed).\nDisadvantages: expensive (API costs); evaluator model has its own biases; can be inconsistent on edge cases.",
+      whyItMatters: "LLM-as-judge has become standard practice for evaluating instruction-following models. OpenAI, Anthropic, and major research labs all use variations of this approach because it's the best available proxy for human preference at scale.",
+      diagram: `graph TD
+  classDef input fill:#dbeafe,stroke:#60a5fa,color:#1e3a8a
+  classDef judge fill:#6366f1,stroke:#4f46e5,color:#fff
+  classDef score fill:#dcfce7,stroke:#4ade80,color:#14532d
+
+  PROMPT["Original prompt:\n'How do I reset my password?'"] --> JUDGE
+  OUTPUT["Model output:\n'To reset your password, click\nForgot Password on the login page...'"] --> JUDGE
+  RUBRIC["Rubric:\n- Answers the question? (1-5)\n- Professional tone? (1-5)\n- Accurate? (1-5)"] --> JUDGE
+  JUDGE["GPT-4 / Claude\n(evaluator model)"] --> SCORE["Score: 4.3/5\nReason: Answers question clearly,\nprofessional tone, accurate process,\ncould mention email verification step"]
+
+  class PROMPT,OUTPUT,RUBRIC input
+  class JUDGE judge
+  class SCORE score`
+    },
+    {
+      title: "Step 4: Human evaluation — the gold standard",
+      body: "For production models, human evaluation is ultimately the most trustworthy signal. Common approaches:\n\n• A/B comparison: show annotators two outputs (your model vs. baseline) and ask 'which is better?'. More reliable than absolute scores.\n• Likert scale rating: rate outputs on a 1–5 scale for each rubric criterion\n• Error taxonomy: annotators label error types (factual error, off-topic, inappropriate tone, truncated answer)\n\nFor a release decision, evaluate at least 200–500 examples with 2–3 annotators per example. Measure inter-annotator agreement (Kappa or Fleiss' kappa) — low agreement means your rubric is ambiguous.",
+      whyItMatters: "Human evaluation is expensive (~$0.5–5 per example × 500 examples × 3 annotators = $750–7,500 per eval round), but it's the only way to catch subtle quality issues that automated metrics miss. Budget for at least one round before any significant deployment.",
+      diagram: `graph LR
+  classDef input fill:#dbeafe,stroke:#60a5fa,color:#1e3a8a
+  classDef human fill:#ede9fe,stroke:#8b5cf6,color:#4c1d95
+  classDef result fill:#dcfce7,stroke:#4ade80,color:#14532d
+
+  PAIR["Output A (your model)\nvs.\nOutput B (baseline / GPT-4)"] --> H1["Annotator 1\nPrefers: A"]
+  PAIR --> H2["Annotator 2\nPrefers: A"]
+  PAIR --> H3["Annotator 3\nPrefers: B"]
+  H1 & H2 & H3 --> AGG["Aggregate: 67% prefer A\nKappa = 0.61 (good agreement)\n→ Model A wins on this criterion"]
+
+  class PAIR input
+  class H1,H2,H3 human
+  class AGG result`
+    },
+    {
+      title: "Step 5: Benchmark datasets — standardized comparisons",
+      body: "Public benchmarks let you compare your model against published baselines and other models:\n\n• MMLU: 57 academic subjects, multiple choice — measures general knowledge\n• HellaSwag: sentence completion — measures reasoning\n• TruthfulQA: measures whether the model gives factually correct answers vs. hallucinating\n• MT-Bench: multi-turn conversation quality, scored by GPT-4\n• HumanEval: coding benchmark — run generated code against test cases\n\nBenchmarks are useful for sanity checks and positioning, but optimize for your actual task first, not benchmark scores. A model with high MMLU but poor performance on your specific domain is still a poor choice.",
+      whyItMatters: "Benchmark gaming is real — models can be fine-tuned specifically to score well on public benchmarks without being genuinely better. Always evaluate on your own task-specific test set as the primary signal.",
+      diagram: `graph TD
+  classDef bench fill:#6366f1,stroke:#4f46e5,color:#fff
+  classDef use fill:#dcfce7,stroke:#4ade80,color:#14532d
+  classDef warn fill:#fef3c7,stroke:#f59e0b,color:#78350f
+
+  MMLU["MMLU\n57 subjects\nmultiple choice"] --> USE["Use for: general\nknowledge check"]
+  TQA["TruthfulQA\nfactual accuracy"] --> WARN["Watch for: models\noptimized on benchmark"]
+  HE["HumanEval\ncoding tasks"] --> USE2["Use for: code\ngeneration models"]
+  MTB["MT-Bench\nmulti-turn chat"] --> USE3["Use for: chat\nmodel quality"]
+
+  class MMLU,TQA,HE,MTB bench
+  class USE,USE2,USE3 use
+  class WARN warn`
+    },
+    {
+      title: "Step 6: Building your evaluation pipeline",
+      body: "A complete evaluation pipeline runs automatically after every training run:\n\n1. Load the best checkpoint\n2. Run automated metrics on the test set (accuracy, ROUGE, etc.)\n3. Run LLM-as-judge on a sample of 50–100 outputs\n4. Check for regressions on a 'golden set' — examples where the previous model was correct\n5. Log all scores to a comparison table\n6. Optionally flag outputs that scored below threshold for human review\n\nThe comparison table lets you track: does model v2 beat v1 on all metrics? Are any metrics getting worse (regression)?",
+      whyItMatters: "An automated eval pipeline means you can run 10 training experiments and immediately see which performed best — not 10 experiments and then a week of manual review. Fast iteration is a competitive advantage in model development.",
+      diagram: `graph LR
+  classDef auto fill:#6366f1,stroke:#4f46e5,color:#fff
+  classDef human fill:#ede9fe,stroke:#8b5cf6,color:#4c1d95
+  classDef report fill:#dcfce7,stroke:#4ade80,color:#14532d
+
+  CK["Best checkpoint"] --> AUTO["Automated eval\n→ accuracy · ROUGE · F1\n(runs in minutes)"]
+  CK --> JUDGE["LLM-as-judge\nsample 100 outputs\n(runs in minutes, ~$5)"]
+  AUTO --> TABLE["Comparison table\nv1: 84% / 0.71 ROUGE / 3.8 judge\nv2: 87% / 0.74 ROUGE / 4.1 judge\n✅ v2 wins all metrics"]
+  JUDGE --> TABLE
+
+  class CK human
+  class AUTO,JUDGE auto
+  class TABLE report`
+    },
+  ]}
+/>
+
+<ConceptCheck
+  question="Your fine-tuned customer support model achieves 92% accuracy on the test set, but when you look at the actual outputs, you notice it frequently gives technically correct answers in a cold, robotic tone that doesn't match your brand. Which evaluation approach would have caught this, and which one missed it?"
+  answer="Accuracy missed it — accuracy only measures whether the answer is correct, not how it's phrased. LLM-as-judge with a tone rubric or human evaluation would have caught it — these approaches can evaluate subjective qualities like warmth and brand alignment that don't show up in yes/no correctness metrics. This is why using multiple evaluation approaches is important: automated metrics catch factual errors and coverage, while LLM-as-judge or human eval catches stylistic and tonal issues."
+/>
+
+## Evaluation Hierarchy
+
+<MermaidDiagram chart={`graph TD
+  classDef cheap fill:#dcfce7,stroke:#4ade80,color:#14532d
+  classDef mid fill:#fef3c7,stroke:#f59e0b,color:#78350f
+  classDef expensive fill:#fee2e2,stroke:#f87171,color:#7f1d1d
+
+  A["1. Automated metrics\n(accuracy · ROUGE · F1)\nFast · Free · Imperfect\n→ Run on every experiment"] --> B["2. LLM-as-judge\n(GPT-4 or Claude scores outputs)\nMinutes · ~$5–20 · Good proxy\n→ Run on top N experiments"]
+  B --> C["3. Human evaluation\n(annotators rate outputs)\nDays · $500–5000 · Gold standard\n→ Run before major releases"]
+
+  class A cheap
+  class B mid
+  class C expensive`}
+/>

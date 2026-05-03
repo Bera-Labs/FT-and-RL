@@ -1,0 +1,176 @@
+import AnalogyCard from '@/components/interactive/AnalogyCard';
+import StepWalkthrough from '@/components/interactive/StepWalkthrough';
+import MermaidDiagram from '@/components/interactive/MermaidDiagram';
+import ConceptCheck from '@/components/interactive/ConceptCheck';
+
+<AnalogyCard
+  title="A chess player, the board, the pieces, and the score"
+  body="Imagine a chess match. The player is the agent — they make all the decisions. The board and pieces are the environment — they define what's possible and respond to every move. The player can see the board (the state). They can move a piece (an action). After each move, their position improves or worsens (a reward signal — though in chess, you often don't know who's winning until the end). The player's overall goal is to checkmate the opponent — maximize their total score over the game. Every RL problem maps onto these same five components: agent, environment, state, action, and reward."
+/>
+
+## The Five RL Components in Detail
+
+Understanding these five components precisely is essential because every RL algorithm is designed around manipulating them.
+
+<MermaidDiagram chart={`graph TD
+  classDef agent fill:#6366f1,stroke:#4f46e5,color:#fff
+  classDef env fill:#dbeafe,stroke:#60a5fa,color:#1e3a8a
+  classDef signal fill:#dcfce7,stroke:#4ade80,color:#14532d
+  classDef concept fill:#ede9fe,stroke:#8b5cf6,color:#4c1d95
+
+  AG["Agent\n(the decision maker)"]
+  EN["Environment\n(the world)"]
+  ST["State\n(current observation)"]
+  AC["Action\n(what the agent does)"]
+  RW["Reward\n(feedback signal)"]
+  PO["Policy\n(strategy: state → action)"]
+  VF["Value Function\n(how good is a state?)"]
+
+  AG --> PO
+  AG --> VF
+  ST --> AG
+  AG --> AC
+  AC --> EN
+  EN --> ST
+  EN --> RW
+
+  class AG,PO,VF agent
+  class EN env
+  class ST concept
+  class AC concept
+  class RW signal`}
+/>
+
+<StepWalkthrough
+  steps={[
+    {
+      title: "Component 1: The Agent",
+      body: "The agent is the learning entity — the thing that perceives, decides, and learns. It has:\n\n• A policy: the current strategy (which action to take in each state)\n• A learning algorithm: how it updates the policy based on experience\n• Memory: what it remembers (recent experiences, long-term knowledge)\n\nAgents can be simple (a lookup table mapping states to actions) or complex (a neural network with billions of parameters). In deep RL, the agent's policy is a deep neural network.\n\nFor RLHF (Chapter 29), the agent is the language model — specifically its parameters, which define how it generates text.",
+      whyItMatters: "The agent's job is to find the best policy — the strategy that maximizes long-term reward. Everything it does — exploration, learning, storing experiences — serves this single goal.",
+      diagram: `graph TD
+  classDef agent fill:#6366f1,stroke:#4f46e5,color:#fff
+  classDef part fill:#ede9fe,stroke:#8b5cf6,color:#4c1d95
+
+  A["Agent"] --> POL["Policy π(a|s)\nNeural network: state → action probs"]
+  A --> MEM["Memory\nReplay buffer of past experiences"]
+  A --> ALG["Learning algorithm\n(Q-learning, PPO, etc.)\nHow to update the policy"]
+
+  class A agent
+  class POL,MEM,ALG part`
+    },
+    {
+      title: "Component 2: The Environment",
+      body: "The environment is everything the agent is not — the external world it interacts with.\n\nThe environment defines:\n• What states exist (the state space)\n• What actions are possible (the action space)\n• How the state changes in response to actions (the transition dynamics)\n• What rewards are given (the reward function)\n\nEnvironments can be:\n• Deterministic: same action in same state always produces same result (chess)\n• Stochastic: same action can produce different results (dice games, partial info)\n• Fully observable: agent sees the complete state (chess board)\n• Partially observable: agent sees only part of the state (poker: hidden cards)",
+      whyItMatters: "The type of environment determines which RL algorithms work. Deterministic vs. stochastic requires different approaches. Partial observability requires the agent to maintain a belief about the hidden state — a significantly harder problem.",
+      diagram: `graph LR
+  classDef env fill:#dbeafe,stroke:#60a5fa,color:#1e3a8a
+  classDef type fill:#ede9fe,stroke:#8b5cf6,color:#4c1d95
+
+  ENV["Environment"] --> DET["Deterministic\nchess · go · grid worlds\nSame action → same result"]
+  ENV --> STOCH["Stochastic\ndice games · physical world\nSame action → different results"]
+  ENV --> FULL["Fully observable\nchess · most Atari games\nAgent sees complete state"]
+  ENV --> PART["Partially observable\npoker · real-world robotics\nAgent sees only partial state"]
+
+  class ENV env
+  class DET,STOCH,FULL,PART type`
+    },
+    {
+      title: "Component 3: States and Observations",
+      body: "The state (s) is the complete description of the environment at a moment in time. The observation (o) is what the agent actually sees — in partially observable environments, this might be less than the full state.\n\nState spaces can be:\n• Discrete: finite number of possible states (chess: board positions ≈ 10^44)\n• Continuous: infinite states (robot arm: exact joint angles)\n\nState representation matters enormously:\n• Raw pixels: 84×84 Atari screen = 7,056 pixel values\n• Structured features: position, velocity, orientation (5 numbers)\n• Text tokens: conversation so far (variable length sequence of integers)\n\nThe state representation is the first design decision in any RL system.",
+      whyItMatters: "A good state representation makes learning easy. A bad one makes it nearly impossible. If critical information isn't in the state (e.g., the agent can't see the obstacle behind it), it can never learn to avoid that obstacle no matter how well the algorithm works.",
+      diagram: `graph TD
+  classDef disc fill:#dbeafe,stroke:#60a5fa,color:#1e3a8a
+  classDef cont fill:#ede9fe,stroke:#8b5cf6,color:#4c1d95
+  classDef example fill:#6366f1,stroke:#4f46e5,color:#fff
+
+  DISC["Discrete state space\n──────────────────\nFinite countable states\nChess: ≈10^44 board positions\nGrid world: N×M cells\nAtari: 256^(84×84) pixel combos"] --> EX1["Example state:\n'Rook on e4, King on g1,\nBishop on c6...'"]
+  CONT["Continuous state space\n──────────────────\nInfinite real-valued states\nRobotics: joint angles in ℝⁿ\nCar driving: position + velocity\nLLM: token embedding vectors"] --> EX2["Example state:\n[0.23, -0.87, 1.45, 0.02, ...]\n(embedding of conversation)"]
+
+  class DISC,EX1 disc
+  class CONT,EX2 cont`
+    },
+    {
+      title: "Component 4: Actions",
+      body: "An action (a) is something the agent can do to change the environment's state.\n\nAction spaces can be:\n• Discrete: choose from a finite set. Atari: 18 possible buttons. Chess: all legal moves.\n• Continuous: any real-valued output. Robotics: apply N Newton-meters of torque. Driving: steering angle.\n\nFor language models, the action space is the vocabulary: at each step, the agent picks one token from ~50,000 options. Generating a complete response is a sequence of thousands of actions.\n\nThe size of the action space is a key challenge. Discrete with 18 options is easy. Continuous or 50,000-option discrete requires function approximation (neural networks).",
+      whyItMatters: "Language model RL is challenging partly because of the enormous action space — 50,000 vocabulary tokens. The policy (neural network) must assign probabilities to all 50,000 options at every generation step, which is why efficient algorithms like PPO are needed.",
+      diagram: `graph LR
+  classDef disc fill:#dbeafe,stroke:#60a5fa,color:#1e3a8a
+  classDef cont fill:#ede9fe,stroke:#8b5cf6,color:#4c1d95
+  classDef llm fill:#6366f1,stroke:#4f46e5,color:#fff
+
+  DISC["Discrete actions\n──────────────────\nAtari: 18 buttons\nChess: legal moves\nGrid: up/down/left/right"]
+  CONT["Continuous actions\n──────────────────\nRobotics: joint torques\nDriving: steering + throttle\nBoth real-valued vectors"]
+  LLM["LLM action space\n──────────────────\nAction = next token\n50,000+ choices\nSequence of actions\n= complete response"]
+
+  class DISC disc
+  class CONT cont
+  class LLM llm`
+    },
+    {
+      title: "Component 5: The Reward Signal",
+      body: "The reward (r) is the scalar feedback the environment gives after each action. The agent's entire goal is to maximize the sum of discounted rewards over time.\n\nRewards can be:\n• Dense: provided at every step (useful for guiding learning)\n• Sparse: only at the end of an episode (win/lose after 1000 moves in chess)\n\nSparse rewards are very hard to learn from. If you only get feedback at the end of a 500-step game, how do you know which of the 500 actions was responsible for the loss?\n\nReward shaping: adding intermediate rewards to guide learning toward the goal. Done carefully, it accelerates training; done carelessly, it causes the agent to optimize the shaped reward instead of the true objective.",
+      whyItMatters: "Reward design is the most important and most underestimated part of RL. The agent will find exactly what maximizes the reward — even if that means doing something completely unexpected that technically gets a high score but violates your intent. This is called reward hacking.",
+      diagram: `graph LR
+  classDef dense fill:#dcfce7,stroke:#4ade80,color:#14532d
+  classDef sparse fill:#fef3c7,stroke:#f59e0b,color:#78350f
+  classDef hack fill:#fee2e2,stroke:#f87171,color:#7f1d1d
+
+  DENSE["Dense rewards\n+0.1 per step forward\n−0.1 per step backward\n+10 at goal\n✅ Fast learning\n✅ Clear gradient"] --> OK
+  SPARSE["Sparse rewards\n0 everywhere\n+1 at goal only\n⚠️ Very slow learning\n⚠️ Credit assignment hard"] --> OK
+  HACK["Reward hacking:\nAgent finds a loophole\nthat maximizes reward\nbut violates intent\n❌ Dangerous in deployment"] --> WARN
+  OK["Design rewards\ncarefully"] --> WARN
+
+  class DENSE dense
+  class SPARSE sparse
+  class HACK,WARN hack`
+    },
+    {
+      title: "The Value Function — estimating long-term worth",
+      body: "Beyond the five core components, one key concept appears in nearly every RL algorithm: the value function.\n\nV(s) = expected total discounted return from state s, following the current policy.\n\nIn plain English: 'if I'm in state s right now and play normally from here, how much reward do I expect to collect in total?'\n\nA high V(s) means 's is a good state to be in.' A low V(s) means 's is a bad position.'\n\nWhy is this useful? Instead of waiting for the actual return at the end of the episode, the agent can use V(s) as a signal right now — 'did my action move me from a low-value state to a high-value state?' This is the bridge between immediate actions and long-term outcomes.",
+      whyItMatters: "Value functions are what allow RL to work on long-horizon problems. Without them, the only training signal comes from the actual return at the end of the episode — which could be thousands of steps away. Value functions provide dense, step-by-step feedback about whether things are going well.",
+      diagram: `graph LR
+  classDef state fill:#dbeafe,stroke:#60a5fa,color:#1e3a8a
+  classDef value fill:#6366f1,stroke:#4f46e5,color:#fff
+  classDef action fill:#dcfce7,stroke:#4ade80,color:#14532d
+  classDef bad fill:#fee2e2,stroke:#f87171,color:#7f1d1d
+
+  S1["State: rook on e4\nking safe\nV = +3.2 (good position)"] --> ACT
+  S2["State: rook lost\nking exposed\nV = −1.8 (bad position)"] --> ACT
+  ACT{"Which action\nincreased V?"}
+  ACT --> PICK["Pick action that\nmaximizes V(s')"]
+
+  class S1 state
+  class S2 bad
+  class ACT value
+  class PICK action`
+    },
+  ]}
+/>
+
+<ConceptCheck
+  question="You're designing an RL agent to control a self-driving car. The reward is +100 for reaching the destination and −1 for every second of travel time. You notice the agent learns to drive in circles near the destination instead of actually completing the route. What type of problem is this, and how would you fix the reward?"
+  answer="This is reward hacking (also called specification gaming). The agent found a policy that technically avoids the −1/second penalty (by going slow) while also staying near the high-reward destination — but it never completes the task. Fix: change the reward to +100 for successfully stopping at the destination AND −1 for every second. The problem was that simply being 'near' the destination was rewarded, but the actual completion condition wasn't enforced. Adding a check that the car must actually stop at the destination closes the loophole."
+/>
+
+## Putting It Together: One RL Episode
+
+<MermaidDiagram chart={`graph LR
+  classDef state fill:#dbeafe,stroke:#60a5fa,color:#1e3a8a
+  classDef action fill:#6366f1,stroke:#4f46e5,color:#fff
+  classDef reward fill:#dcfce7,stroke:#4ade80,color:#14532d
+  classDef neg fill:#fee2e2,stroke:#f87171,color:#7f1d1d
+
+  S0["s₀: Start state\nboard = initial position"] --> A0["a₀: Agent moves pawn"]
+  A0 --> R0["r₀ = 0\n(neutral move)"]
+  R0 --> S1["s₁: New board state"]
+  S1 --> A1["a₁: Agent takes bishop"]
+  A1 --> R1["r₁ = +3\n(gained material)"]
+  R1 --> S2["s₂: Board state"]
+  S2 --> AN["...continue until\ngame ends"]
+  AN --> RN["r_T = +10 or −10\n(win or loss)"]
+
+  class S0,S1,S2 state
+  class A0,A1,AN action
+  class R0,R1 reward
+  class RN reward`}
+/>

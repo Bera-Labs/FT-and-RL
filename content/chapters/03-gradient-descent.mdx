@@ -1,0 +1,230 @@
+import AnalogyCard from '@/components/interactive/AnalogyCard';
+import StepWalkthrough from '@/components/interactive/StepWalkthrough';
+import MermaidDiagram from '@/components/interactive/MermaidDiagram';
+import ConceptCheck from '@/components/interactive/ConceptCheck';
+import ParameterSlider from '@/components/interactive/ParameterSlider';
+
+<AnalogyCard
+  title="A blindfolded hiker finding the lowest valley"
+  body="Imagine you're blindfolded on a hilly landscape. Your job is to reach the lowest valley, but you can't see — you can only feel the slope of the ground under your feet. So you take one small step in the downhill direction. Then another. You keep taking small steps, always following the slope, until the ground flattens out and you stop moving downhill. That flat spot is the valley floor — the lowest point you can find. This is exactly what a neural network does during training. The 'hills' represent wrong answers (high loss), the 'valley floor' represents the best possible answer (low loss), and each step is one weight update."
+/>
+
+## How Does a Model Actually Learn?
+
+In Chapter 2, we saw that a neural network has weights — numbers that determine how strongly each connection matters. Training means finding the weight values that make the network's predictions as accurate as possible.
+
+But how do we find those values? There are roughly 175 billion weights in GPT-3. We can't try every possible combination. We need a smarter approach — that's **gradient descent**.
+
+<StepWalkthrough
+  steps={[
+    {
+      title: "Step 1: Start with random weights",
+      body: "Before training begins, every weight in the network is initialized to a small random number. This means the network's very first predictions are essentially random guesses — like a student walking into an exam having never studied. Terrible! But that's fine — we're about to fix it.\n\nFor example: the model might predict 'spam' for every email, or output 0.5 for everything. The starting randomness doesn't matter; training will correct it.",
+      whyItMatters: "We need a starting point. Random initialization breaks symmetry — if all weights started at zero, every neuron would learn the same thing and the network would be useless. Randomness ensures each neuron specializes differently.",
+      diagram: `graph LR
+  classDef init fill:#fef3c7,stroke:#f59e0b,color:#78350f
+  classDef model fill:#6366f1,stroke:#4f46e5,color:#fff
+  classDef bad fill:#fee2e2,stroke:#f87171,color:#7f1d1d
+
+  W["🎲 Weights\nsmall random numbers"] --> M["Neural Network\n(untrained)"]
+  M --> P["Prediction: 0.47\nbasically random"]
+  P --> X["❌ Loss = 0.91\nvery wrong"]
+
+  class W init
+  class M model
+  class P,X bad`
+    },
+    {
+      title: "Step 2: Make a prediction (forward pass)",
+      body: "We feed one example (or a batch of examples) through the network, layer by layer, until we get a prediction out the other side. This journey from input to output is called the forward pass.\n\nExample: We feed in an email. The network processes the words through all its layers and outputs a number: say, 0.3. We'll interpret this as '30% chance of spam'.",
+      whyItMatters: "The forward pass is how the network actually makes a prediction. Every training step starts with a forward pass, and in production, every inference is also a forward pass — just without the weight update that follows.",
+      diagram: `graph LR
+  classDef data fill:#dbeafe,stroke:#60a5fa,color:#1e3a8a
+  classDef layer fill:#ede9fe,stroke:#8b5cf6,color:#4c1d95
+  classDef pred fill:#f1f5f9,stroke:#94a3b8,color:#334155
+
+  E(["📧 Input email"]) --> L1["Layer 1\nword patterns"]
+  L1 --> L2["Layer 2\nphrase patterns"]
+  L2 --> L3["Layer 3\nmeaning"]
+  L3 --> P["Prediction: 0.30\n→ 30% spam"]
+
+  class E data
+  class L1,L2,L3 layer
+  class P pred`
+    },
+    {
+      title: "Step 3: Calculate the loss (how wrong were we?)",
+      body: "Now we compare the prediction to the correct answer using a loss function. If the email really is spam (label = 1) and we predicted 0.3, that's wrong — loss is high. If we had predicted 0.9, that would be much better — loss would be low.\n\nCommon loss functions:\n• Binary cross-entropy: for yes/no problems (spam or not)\n• Mean squared error: for numeric predictions (house prices)\n• Cross-entropy: for multi-class problems (cat / dog / bird)\n\nThink of loss as a score on a test — but lower is better.",
+      whyItMatters: "Loss is the signal that drives learning. Without a way to measure 'how wrong', there's nothing to improve. The entire training process is about minimizing this number.",
+      diagram: `graph TD
+  classDef pred fill:#fee2e2,stroke:#f87171,color:#7f1d1d
+  classDef truth fill:#dcfce7,stroke:#4ade80,color:#14532d
+  classDef fn fill:#6366f1,stroke:#4f46e5,color:#fff
+  classDef score fill:#7f1d1d,stroke:#450a0a,color:#fecaca
+
+  P["Model output: 0.30"] --> L["Loss Function\nbinary cross-entropy"]
+  T["True label: 1.0\n(IS spam ✓)"] --> L
+  L --> S["Loss = 0.83 🔴\nmodel was very wrong"]
+
+  class P pred
+  class T truth
+  class L fn
+  class S score`
+    },
+    {
+      title: "Step 4: Compute the gradient (which way is uphill?)",
+      body: "Here's the clever part. The loss is a number. The weights are numbers. We can ask: 'if I nudge each weight slightly, does the loss go up or down?' The answer to this question for every single weight is called the gradient.\n\nThe gradient is like the slope of the hill. A large positive gradient for a weight means: 'increasing this weight makes the loss worse — go the other way'. A large negative gradient means: 'increasing this weight makes the loss better'.\n\nComputing gradients for all weights simultaneously is done via backpropagation (Chapter 4).",
+      whyItMatters: "The gradient tells us the exact direction to move each weight to reduce loss. Without it, we'd have to guess randomly — which would take forever for billions of weights.",
+      diagram: `graph TD
+  classDef loss fill:#fee2e2,stroke:#f87171,color:#7f1d1d
+  classDef grad fill:#fef3c7,stroke:#f59e0b,color:#78350f
+  classDef decrease fill:#dcfce7,stroke:#4ade80,color:#14532d
+  classDef increase fill:#dbeafe,stroke:#60a5fa,color:#1e3a8a
+
+  L["Loss = 0.83"] --> G["∇L  Backpropagation\ncompute gradient for every weight"]
+  G --> G1["∂L/∂w₁ = +0.42\n→ w₁ is too high, decrease it"]
+  G --> G2["∂L/∂w₂ = −0.17\n→ w₂ is too low, increase it"]
+  G --> G3["∂L/∂w₃ = +0.05\n→ small positive, nudge down"]
+
+  class L loss
+  class G grad
+  class G1,G3 decrease
+  class G2 increase`
+    },
+    {
+      title: "Step 5: Take a step downhill (weight update)",
+      body: "Now we update every weight by moving it in the opposite direction of its gradient — that is, downhill.\n\nThe update rule: w_new = w_old − (learning_rate × gradient)\n\nThe learning rate (often written as η or lr) controls how big a step we take. Too large and we'll overshoot the valley. Too small and training will take forever.\n\nTry adjusting the learning rate in the slider below to see the effect on convergence.",
+      whyItMatters: "This is the actual 'learning' moment. Every weight gets a tiny nudge that makes the loss slightly lower. Do this millions of times and the network becomes accurate.",
+      diagram: `graph LR
+  classDef old fill:#f1f5f9,stroke:#94a3b8,color:#334155
+  classDef param fill:#fef3c7,stroke:#f59e0b,color:#78350f
+  classDef rule fill:#6366f1,stroke:#4f46e5,color:#fff
+  classDef new fill:#dcfce7,stroke:#4ade80,color:#14532d
+
+  W["w_old = 0.850"] --> U["w_new = w_old − lr × ∇"]
+  LR["lr = 0.01"] --> U
+  G["∇ = +0.42"] --> U
+  U --> WN["w_new = 0.8458\nslightly closer to optimal ↓"]
+
+  class W,LR,G param
+  class U rule
+  class WN new`
+    },
+    {
+      title: "Step 6: Repeat with mini-batches",
+      body: "We don't run the whole dataset through the network in one go — that would be too slow. Instead, we divide the data into mini-batches (typically 16–256 examples at a time). We compute the loss and gradient on one batch, update the weights, then move to the next batch.\n\nOne full pass through all batches = one epoch. Training usually runs for 3–100+ epochs depending on the problem.",
+      whyItMatters: "Mini-batches give noisy but fast gradient estimates. A bit of noise is actually helpful — it prevents the model from getting stuck in bad local minima. This is called Stochastic Gradient Descent (SGD).",
+      diagram: `graph TD
+  classDef data fill:#dbeafe,stroke:#60a5fa,color:#1e3a8a
+  classDef batch fill:#ede9fe,stroke:#8b5cf6,color:#4c1d95
+  classDef epoch fill:#6366f1,stroke:#4f46e5,color:#fff
+
+  D[("All training data\n10,000 examples")] --> B1["Batch 1  · 32 examples\nforward → loss → update"]
+  D --> B2["Batch 2  · 32 examples\nforward → loss → update"]
+  D --> B3["Batch 3  · 32 examples\nforward → loss → update"]
+  D --> BN["··· Batch N"]
+  B1 & B2 & B3 & BN --> E["✅ 1 Epoch complete\nall weights updated once"]
+
+  class D data
+  class B1,B2,B3,BN batch
+  class E epoch`
+    },
+    {
+      title: "Step 7: Training converges (loss stops dropping)",
+      body: "After many epochs, the loss curve flattens — the model has reached a point where further updates aren't making it meaningfully better. This is called convergence. At this point, we save the model's weights to disk. This saved file is the trained model, ready to make predictions on new data.\n\nIn later chapters, this saved checkpoint is also what we start from when fine-tuning.",
+      whyItMatters: "Convergence doesn't mean perfect — it means we've found a good-enough valley. The loss will never reach exactly zero on real data. The goal is a low enough loss that the model is useful in practice.",
+      diagram: `graph LR
+  classDef high fill:#fee2e2,stroke:#f87171,color:#7f1d1d
+  classDef mid fill:#fef3c7,stroke:#f59e0b,color:#78350f
+  classDef low fill:#dcfce7,stroke:#4ade80,color:#14532d
+  classDef done fill:#6366f1,stroke:#4f46e5,color:#fff
+
+  E1["Epoch 1\nLoss: 0.92 🔴"] --> E2["Epoch 5\nLoss: 0.61 🟡"]
+  E2 --> E3["Epoch 20\nLoss: 0.23 🟡"]
+  E3 --> E4["Epoch 50\nLoss: 0.09 🟢"]
+  E4 --> E5["✅ Converged\nSave model weights"]
+
+  class E1 high
+  class E2,E3 mid
+  class E4 low
+  class E5 done`
+    },
+  ]}
+/>
+
+## The Learning Rate: Your Most Important Setting
+
+The learning rate is the single most important hyperparameter in training. Try dragging the slider below to see how different learning rates affect how quickly (and whether) a model converges.
+
+<ParameterSlider preset="learning-rate" />
+
+<ConceptCheck
+  question="If the gradient for a weight is positive (+0.6), should we increase or decrease that weight during the update step? Why?"
+  answer="Decrease it. A positive gradient means 'increasing this weight makes the loss go up (worse)'. So to reduce the loss, we go in the opposite direction — we decrease the weight. The update formula is: w_new = w_old − (lr × gradient). Since the gradient is positive, we subtract a positive number, making the weight smaller."
+/>
+
+## Putting It All Together
+
+<MermaidDiagram chart={`graph TD
+  classDef step fill:#ede9fe,stroke:#8b5cf6,color:#4c1d95
+  classDef decision fill:#fef3c7,stroke:#f59e0b,color:#78350f
+  classDef done fill:#dcfce7,stroke:#16a34a,color:#14532d
+
+  A["1️⃣  Initialize weights randomly"] --> B["2️⃣  Forward pass — make a prediction"]
+  B --> C["3️⃣  Compute loss — how wrong were we?"]
+  C --> D["4️⃣  Backpropagate — compute gradients"]
+  D --> E["5️⃣  Update weights — step downhill"]
+  E --> F{"Loss\nlow enough?"}
+  F --"No — keep training"--> B
+  F --"Yes!"--> G["✅ Training complete\nSave model weights to disk"]
+
+  class A,B,C,D,E step
+  class F decision
+  class G done`}
+/>
+
+This loop — forward pass, compute loss, compute gradient, update weights — runs millions of times. That's all training is. The cleverness lies in doing it efficiently for billions of weights at once, which is what backpropagation (Chapter 4) handles.
+
+## Beyond SGD: Adaptive Optimizers
+
+The update rule from Step 5 — `w = w − lr × gradient` — is called Stochastic Gradient Descent (SGD). It works, but it has a significant limitation: every weight uses the same learning rate, regardless of how frequently it's updated or how noisy its gradient is.
+
+**The problem:** some weights have consistently large gradients and get over-updated; others have small, sparse gradients and barely change. A flat learning rate fits neither well.
+
+**Adam** (Adaptive Moment Estimation, 2014) solves this by tracking two moving averages for each weight — its gradient history and its squared-gradient history — and uses them to adapt the learning rate per weight.
+
+<MermaidDiagram chart={`graph TD
+  classDef sgd fill:#fee2e2,stroke:#f87171,color:#7f1d1d
+  classDef mom fill:#fef3c7,stroke:#f59e0b,color:#78350f
+  classDef adam fill:#dcfce7,stroke:#4ade80,color:#14532d
+
+  SGD["SGD  w = w − lr × ∇\n────────────────────\nSame lr for every weight\nNoisy updates\nSlow on sparse features"]
+  MOM["SGD + Momentum\nw = w − lr × (β·v + ∇)\n────────────────────\nAccumulates past gradients\nSmoother descent\nLike a ball rolling downhill"]
+  ADAM["Adam  (most common)\nm = β₁m + (1−β₁)∇  ← gradient mean\nv = β₂v + (1−β₂)∇²  ← gradient variance\nw = w − α · m̂ / (√v̂ + ε)\n────────────────────\nPer-weight adaptive lr\nBuilt-in momentum\nDefault: β₁=0.9 β₂=0.999 ε=1e-8"]
+
+  SGD --> MOM --> ADAM
+
+  class SGD sgd
+  class MOM mom
+  class ADAM adam`}
+/>
+
+**How Adam works in plain English:**
+- `m` (first moment) is a running average of the gradient — like momentum, it smooths out noise
+- `v` (second moment) is a running average of the *squared* gradient — it tracks how volatile each weight's gradient is
+- The update `m̂ / √v̂` divides by the square root of recent gradient variance: weights with noisy gradients get a smaller effective step; weights with consistent gradients get a larger step
+- `m̂` and `v̂` are bias-corrected versions of `m` and `v` (because they start at zero, they're biased toward zero early in training)
+
+**Why this matters for the rest of the course:** Every chapter on fine-tuning and RLHF uses Adam or a variant (AdamW). When you see `lr=1e-4` or `lr=2e-5` as a recommended hyperparameter, that's the Adam learning rate α — not a raw SGD step size. Adam is so ubiquitous that "the optimizer" almost always means Adam unless stated otherwise.
+
+**AdamW** adds weight decay directly into the update (rather than through the gradient), which regularizes better. It's the default for fine-tuning transformers.
+
+<MermaidDiagram chart={`graph LR
+  classDef sgd fill:#fee2e2,stroke:#f87171,color:#7f1d1d
+  classDef adam fill:#dcfce7,stroke:#4ade80,color:#14532d
+  classDef hyp fill:#fef3c7,stroke:#f59e0b,color:#78350f
+
+  H["Typical Adam hyperparameters\n──────────────────────────────\nα (learning rate): 1e-4 for training\n                   1e-5 for fine-tuning\nβ₁ (gradient momentum): 0.9\nβ₂ (variance tracking): 0.999\nε (numerical stability): 1e-8\nweight decay (AdamW): 0.01–0.1"]
+
+  class H hyp`}
+/>

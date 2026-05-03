@@ -1,0 +1,180 @@
+import AnalogyCard from '@/components/interactive/AnalogyCard';
+import StepWalkthrough from '@/components/interactive/StepWalkthrough';
+import MermaidDiagram from '@/components/interactive/MermaidDiagram';
+import ConceptCheck from '@/components/interactive/ConceptCheck';
+
+<AnalogyCard
+  title="Open-book exam vs. memorizing everything"
+  body="A student preparing for an open-book exam doesn't need to memorize every fact in the textbook — they just need to know which page to flip to. When the exam question arrives, they look up the relevant passage, read it, and write their answer using both the question and the retrieved text. RAG gives language models this same ability. Instead of relying only on knowledge baked into weights during training, the model can look things up at inference time. A vector database replaces the textbook, semantic search replaces flipping pages, and the retrieved passages are handed to the model alongside the user's question — letting it answer with information it was never trained on."
+/>
+
+## What Problem Does RAG Solve?
+
+Fine-tuning bakes knowledge into model weights — permanent, fast at inference, but costly to update and limited to what was in training data. RAG externalizes knowledge into a retrievable database — always up-to-date, can be arbitrarily large, but adds retrieval latency.
+
+<MermaidDiagram chart={`graph LR
+  classDef problem fill:#fee2e2,stroke:#f87171,color:#7f1d1d
+  classDef ft fill:#ede9fe,stroke:#8b5cf6,color:#4c1d95
+  classDef rag fill:#dcfce7,stroke:#4ade80,color:#14532d
+
+  P["LLM limitations:\n✗ Knowledge cutoff (stale facts)\n✗ Hallucination on specific details\n✗ Context window too small for\n  large knowledge bases\n✗ Expensive to retrain for new info"]
+  FT["Fine-tuning solution:\n✓ Bakes knowledge into weights\n✗ Expensive to update\n✗ Can still hallucinate\n✗ Bounded by training data"]
+  RAG["RAG solution:\n✓ Retrieves fresh info at query time\n✓ Easy to update (just add documents)\n✓ Can cite sources\n✓ Handles arbitrarily large knowledge bases"]
+
+  class P problem
+  class FT ft
+  class RAG rag`}
+/>
+
+<StepWalkthrough
+  steps={[
+    {
+      title: "Step 1: Embeddings — turning text into searchable vectors",
+      body: "RAG relies on the same concept introduced in Chapter 7: embeddings. But where the Transformer uses embeddings as input representations, RAG uses embeddings for semantic search.\n\nAn embedding model (like `text-embedding-3-small` or `bge-large`) takes a passage of text and outputs a fixed-size vector (typically 768–3072 numbers) where semantically similar texts produce nearby vectors.\n\nExamples of close embeddings:\n• 'The capital of France' ≈ 'Paris is where the French government is based'\n• 'Machine learning tutorial' ≈ 'Introduction to neural networks'\n\nThe key insight: you can search for semantically similar text by finding the nearest vector in a database — even if no exact words match.",
+      whyItMatters: "Semantic search via embeddings is what separates RAG from keyword search. Keyword search finds 'heart attack' but not 'myocardial infarction'. Embedding search finds both, because they map to similar vectors. This robustness is essential for knowledge retrieval.",
+      diagram: `graph LR
+  classDef inp fill:#dbeafe,stroke:#60a5fa,color:#1e3a8a
+  classDef model fill:#6366f1,stroke:#4f46e5,color:#fff
+  classDef vec fill:#dcfce7,stroke:#4ade80,color:#14532d
+  classDef search fill:#fef3c7,stroke:#f59e0b,color:#78350f
+
+  T1(["'What causes heart attacks?'"]) --> EMB["Embedding model\n(e.g. bge-large)"]
+  T2(["'Myocardial infarction risk\nfactors include...'"]) --> EMB
+  T3(["'Heart attack symptoms\nand treatment'"]) --> EMB
+  EMB --> V1["[0.3, -0.1, 0.8, ...] (768 dims)"]
+  EMB --> V2["[0.3, -0.1, 0.7, ...] (similar!)"]
+  EMB --> V3["[0.3, -0.2, 0.8, ...] (also similar!)"]
+
+  class T1,T2,T3 inp
+  class EMB model
+  class V1,V2,V3 vec`
+    },
+    {
+      title: "Step 2: Building the vector store — indexing your documents",
+      body: "Before RAG can retrieve anything, you need to index your knowledge base:\n\n1. Load all your documents (PDFs, markdown files, database records, web pages)\n2. Chunk them into pieces small enough to be useful but large enough to have context (typically 200–1000 tokens per chunk)\n3. Run each chunk through an embedding model to get a vector\n4. Store the (vector, text) pairs in a vector database\n\nPopular vector databases:\n• Pinecone, Weaviate, Qdrant: dedicated vector DBs with approximate nearest-neighbor (ANN) search\n• pgvector: vector extension for PostgreSQL — simplest if you already use Postgres\n• FAISS: in-memory library from Meta, great for prototyping\n• ChromaDB: lightweight, local-first, popular for local development\n\nThis indexing step happens once (offline) and is updated when your documents change.",
+      whyItMatters: "The quality of your chunking strategy significantly affects RAG quality. Chunks too small lose context. Chunks too large dilute relevance with unrelated sentences. Splitting at semantic boundaries (paragraphs, sections) consistently outperforms fixed-size splitting.",
+      diagram: `graph TD
+  classDef doc fill:#dbeafe,stroke:#60a5fa,color:#1e3a8a
+  classDef proc fill:#fef3c7,stroke:#f59e0b,color:#78350f
+  classDef store fill:#6366f1,stroke:#4f46e5,color:#fff
+  classDef out fill:#dcfce7,stroke:#4ade80,color:#14532d
+
+  DOCS["Raw documents\n(PDFs, markdown, HTML, DB rows)"] --> CHUNK["Chunking\n200–1000 tokens per chunk\nat paragraph or section boundaries"]
+  CHUNK --> EMBED["Embedding model\nchunk → vector (768 dims)"]
+  EMBED --> VDB[("Vector database\n{vector, text, metadata}\nindexed for ANN search")]
+
+  class DOCS doc
+  class CHUNK,EMBED proc
+  class VDB store`
+    },
+    {
+      title: "Step 3: Retrieval — finding the relevant chunks at query time",
+      body: "When a user asks a question, RAG retrieves relevant chunks before generating an answer:\n\n1. Embed the user's query using the same embedding model used for indexing\n2. Search the vector database for the k most similar vectors (k = 3–10 typically)\n3. Retrieve the text chunks corresponding to those vectors\n\nSimilarity is measured by cosine similarity — the cosine of the angle between two vectors:\n  sim(A, B) = (A · B) / (|A| × |B|)\n\nA score of 1.0 = identical direction (most similar), 0.0 = perpendicular (unrelated), −1.0 = opposite.\n\nApproximate Nearest Neighbor (ANN) algorithms (HNSW, IVF) make this search fast even over millions of vectors — typically sub-10ms for 1M vectors.",
+      whyItMatters: "The retrieval step is where RAG can fail. If the query embedding doesn't produce high similarity with the relevant chunk embeddings, the wrong context is retrieved and the model gives a confident but wrong answer. Monitoring retrieval quality (not just generation quality) is critical for production RAG systems.",
+      diagram: `graph LR
+  classDef query fill:#dbeafe,stroke:#60a5fa,color:#1e3a8a
+  classDef search fill:#6366f1,stroke:#4f46e5,color:#fff
+  classDef result fill:#dcfce7,stroke:#4ade80,color:#14532d
+  classDef score fill:#fef3c7,stroke:#f59e0b,color:#78350f
+
+  Q(["User query:\n'What are the side effects\nof metformin?'"]) --> QE["Embed query\n→ vector q"]
+  QE --> ANN["ANN search in vector DB\nfind top-3 by cosine similarity"]
+  ANN --> R1["Chunk 1 (sim=0.91)\n'Metformin may cause\ngastrointestinal issues...'"]
+  ANN --> R2["Chunk 2 (sim=0.87)\n'Common side effects include\nnausea, diarrhea...'"]
+  ANN --> R3["Chunk 3 (sim=0.82)\n'B12 deficiency is a\nlong-term concern with...'"]
+
+  class Q query
+  class QE,ANN search
+  class R1,R2,R3 result`
+    },
+    {
+      title: "Step 4: Augmented generation — combining retrieval with the LLM",
+      body: "The retrieved chunks are injected into the prompt before the user's question:\n\n```\nSystem: You are a helpful medical assistant. Use only the provided context.\n\nContext:\n[Chunk 1] Metformin may cause gastrointestinal issues...\n[Chunk 2] Common side effects include nausea, diarrhea...\n[Chunk 3] B12 deficiency is a long-term concern...\n\nQuestion: What are the side effects of metformin?\n```\n\nThe model generates its answer conditioned on both the question and the retrieved context. Because the answer is grounded in retrieved text, the model can cite sources and is less likely to hallucinate.\n\nOptional improvements:\n• Instruct the model to say 'I don't know' when context doesn't contain the answer\n• Ask the model to cite which chunk number supports each claim\n• Add a reranker between retrieval and generation to re-score the top-k chunks",
+      whyItMatters: "The 'augmented' in RAG is just prompt engineering — you're giving the model reference material to read before answering. The model's job shifts from 'recall this from weights' to 'find the answer in this provided text'. The latter task is something LLMs do very well, which is why RAG reduces hallucination.",
+      diagram: `graph TD
+  classDef query fill:#dbeafe,stroke:#60a5fa,color:#1e3a8a
+  classDef ret fill:#fef3c7,stroke:#f59e0b,color:#78350f
+  classDef prompt fill:#ede9fe,stroke:#8b5cf6,color:#4c1d95
+  classDef gen fill:#6366f1,stroke:#4f46e5,color:#fff
+  classDef out fill:#dcfce7,stroke:#4ade80,color:#14532d
+
+  Q(["User: What are metformin side effects?"]) --> RET["Retrieve top-3 chunks\nfrom vector database"]
+  RET --> PROMPT["Augmented prompt:\nSystem + Context + Question"]
+  PROMPT --> LLM["LLM generates answer\ngrounded in retrieved context"]
+  LLM --> ANS["Answer with citations\n(less hallucination, always fresh)"]
+
+  class Q query
+  class RET ret
+  class PROMPT prompt
+  class LLM gen
+  class ANS out`
+    },
+    {
+      title: "Step 5: Chunking strategies",
+      body: "How you split documents into chunks dramatically affects retrieval quality:\n\n• Fixed-size chunking: split every 512 tokens regardless of content. Simple, but cuts sentences mid-thought. Often poor quality.\n\n• Sentence / paragraph splitting: split at sentence or paragraph boundaries. Preserves coherence. Much better than fixed-size.\n\n• Semantic chunking: use an embedding model to identify where topic shifts occur, then split there. Highest quality, but computationally expensive to build.\n\n• Sliding window with overlap: include 50–100 token overlap between adjacent chunks so context isn't lost at boundaries. Improves recall at the cost of redundancy.\n\n• Hierarchical chunking: store both full-document-level embeddings and paragraph-level embeddings. Retrieve the document first, then the paragraph. Two-stage retrieval with better precision.\n\nRule of thumb: try sentence splitting with 50-token overlap first — it's simple and works well for most use cases.",
+      whyItMatters: "Chunking is the most consistently underrated part of building a RAG system. Engineers often spend weeks tuning prompts and models when the real problem is that the retrieval step is returning poorly-chunked context. Improving chunking often gives the largest quality boost for the least effort.",
+      diagram: `graph TD
+  classDef bad fill:#fee2e2,stroke:#f87171,color:#7f1d1d
+  classDef ok fill:#fef3c7,stroke:#f59e0b,color:#78350f
+  classDef good fill:#dcfce7,stroke:#4ade80,color:#14532d
+
+  FIXED["Fixed-size (512 tokens)\n'...the patient experienced\nside eff' / 'ects including...\n(cuts mid-sentence)"] --> Q
+  SENT["Sentence splitting\n'The patient experienced\nside effects including nausea.'\n(preserves meaning)"] --> Q
+  OVER["Sentence + 50-token overlap\nEach chunk shares context\nwith neighbors"] --> Q
+  Q["Retrieval quality\n(which approach finds\nthe right passage?)"]
+
+  class FIXED bad
+  class SENT ok
+  class OVER good`
+    },
+    {
+      title: "Step 6: RAG vs fine-tuning vs prompting — the decision framework",
+      body: "All three approaches have distinct strengths. Choose based on your actual constraints:\n\n**Use prompting (no fine-tuning, no RAG) when:**\n• Your knowledge fits in the context window (< ~50k tokens)\n• You need rapid iteration without dataset collection\n• Your task is already in the model's capabilities\n\n**Use RAG when:**\n• Your knowledge base is large (millions of documents) or changes frequently\n• You need to cite specific sources\n• You want to avoid hallucination on factual questions\n• You need fresh information beyond the model's training cutoff\n\n**Use fine-tuning when:**\n• You need a consistent output format, tone, or domain vocabulary\n• Your task requires behavioral change the base model doesn't exhibit\n• You need cost-efficient inference (no retrieval overhead per query)\n• You're teaching style/reasoning patterns, not facts\n\n**Use RAG + fine-tuning together when:**\n• You need both domain behavior (fine-tuning) and access to a large document corpus (RAG)\n• Example: fine-tune a medical model + RAG over your hospital's database",
+      whyItMatters: "This decision affects cost, latency, maintenance burden, and quality differently for each project. There is no single right answer. The most common mistake is reflexively fine-tuning when the actual need is fresh knowledge retrieval — RAG would have been faster, cheaper, and more accurate.",
+      diagram: `graph TD
+  classDef q fill:#fef3c7,stroke:#f59e0b,color:#78350f
+  classDef rag fill:#dcfce7,stroke:#4ade80,color:#14532d
+  classDef ft fill:#ede9fe,stroke:#8b5cf6,color:#4c1d95
+  classDef prompt fill:#dbeafe,stroke:#60a5fa,color:#1e3a8a
+
+  Q1{"Knowledge fits\nin context window?"}
+  Q1 --"Yes"--> PROMPT["Just prompting\n(simplest, iterate fast)"]
+  Q1 --"No"--> Q2{"Knowledge changes\nfrequently or is large?"}
+  Q2 --"Yes"--> RAG["Use RAG\n(dynamic, citable, always fresh)"]
+  Q2 --"No"--> Q3{"Need behavioral change\n(format, tone, task style)?"}
+  Q3 --"Yes"--> FT["Fine-tune\n(bakes behavior into weights)"]
+  Q3 --"No"--> RAG
+
+  class Q1,Q2,Q3 q
+  class RAG rag
+  class FT ft
+  class PROMPT prompt`
+    },
+  ]}
+/>
+
+<ConceptCheck
+  question="A company wants to build a chatbot that answers questions about their internal HR policies. Their policy documents total 500 pages and are updated quarterly. Should they use fine-tuning or RAG, and why?"
+  answer="RAG is the better choice here. The reasons: (1) 500 pages is too large for a context window but small enough to build a vector database easily. (2) Quarterly updates would require re-running fine-tuning every quarter at significant cost, whereas updating a RAG system just means re-indexing changed documents. (3) HR policy questions are factual lookups ('what is the vacation policy?'), not behavioral tasks — the model doesn't need to learn a new style or output format. (4) RAG allows the chatbot to cite specific policy sections, which is important in an HR context for compliance. Fine-tuning would be the right choice if the company also needed the chatbot to adopt a specific tone, follow a proprietary response template, or handle a domain where the base model lacks vocabulary — these behavioral requirements could be combined with RAG in a hybrid approach."
+/>
+
+## How RAG and Fine-Tuning Complement Each Other
+
+RAG and fine-tuning aren't mutually exclusive — they solve different problems and can be layered.
+
+<MermaidDiagram chart={`graph TD
+  classDef ft fill:#ede9fe,stroke:#8b5cf6,color:#4c1d95
+  classDef rag fill:#dcfce7,stroke:#4ade80,color:#14532d
+  classDef both fill:#6366f1,stroke:#4f46e5,color:#fff
+
+  FT["Fine-tuning adds:\n✓ Domain vocabulary and reasoning\n✓ Consistent output format and tone\n✓ Task-specific behavior\n✗ Still limited to training-time knowledge\n✗ Costly to update with new facts"]
+  RAG["RAG adds:\n✓ Fresh, up-to-date information\n✓ Access to large knowledge bases\n✓ Citable sources\n✗ Doesn't change model behavior or style\n✗ Adds retrieval latency per query"]
+  BOTH["Fine-tuning + RAG:\n✓ Domain behavior from fine-tuning\n✓ Fresh knowledge from retrieval\nExample: fine-tuned medical LM\n+ RAG over hospital records"]
+
+  FT --> BOTH
+  RAG --> BOTH
+
+  class FT ft
+  class RAG rag
+  class BOTH both`}
+/>

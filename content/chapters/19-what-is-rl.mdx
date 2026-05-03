@@ -1,0 +1,158 @@
+import AnalogyCard from '@/components/interactive/AnalogyCard';
+import StepWalkthrough from '@/components/interactive/StepWalkthrough';
+import MermaidDiagram from '@/components/interactive/MermaidDiagram';
+import ConceptCheck from '@/components/interactive/ConceptCheck';
+
+<AnalogyCard
+  title="Training a dog with treats and corrections"
+  body="When you train a dog to sit, you don't write a rulebook. You wait for the dog to sit, then immediately give it a treat. If it jumps up instead, you say 'no' and withhold the treat. The dog gradually figures out: sitting produces good things; jumping doesn't. It discovers the strategy through trial and error and feedback. Reinforcement learning works exactly the same way — an agent tries actions in an environment, receives rewards or penalties, and gradually learns which actions lead to the most reward. No explicit rules are programmed. The behavior emerges from the feedback signal alone."
+/>
+
+## Supervised vs. Reinforcement Learning
+
+The two types of learning you'll use in this course are fundamentally different in how they learn:
+
+<MermaidDiagram chart={`graph LR
+  classDef sup fill:#dbeafe,stroke:#60a5fa,color:#1e3a8a
+  classDef rl fill:#dcfce7,stroke:#4ade80,color:#14532d
+
+  SL["Supervised Learning\n────────────────────\nTeacher provides correct answer\nfor every example\n'Input X → correct output Y'\nModel learns the mapping\nExample: image classification\n(label = 'cat', 'dog', ...)"]
+  RL["Reinforcement Learning\n────────────────────\nNo correct answer provided\nAgent tries action, receives reward\n'Did that help or hurt?'\nModel discovers good behavior\nExample: playing chess\n(win/lose at the end)"]
+
+  class SL sup
+  class RL rl`}
+/>
+
+<StepWalkthrough
+  steps={[
+    {
+      title: "Step 1: The agent and the environment",
+      body: "Every RL setup has two core components:\n\n• Agent: the learner — the thing that makes decisions and takes actions. In a game, the agent is the player. In robotics, the agent is the robot. For LLMs, the agent is the language model.\n\n• Environment: everything the agent interacts with — the world. In a game, the environment is the game engine. In robotics, it's the physical world. For LLMs, the environment is the user conversation and a reward model that scores responses.\n\nThe agent and environment interact in a loop: the agent observes the environment, picks an action, and the environment changes state and returns a reward.",
+      whyItMatters: "The clean separation between agent and environment is what makes RL so general. The same learning algorithms that work for video games also work for robotic control, recommendation systems, and language model alignment — only the environment definition changes.",
+      diagram: `graph LR
+  classDef agent fill:#6366f1,stroke:#4f46e5,color:#fff
+  classDef env fill:#dbeafe,stroke:#60a5fa,color:#1e3a8a
+  classDef signal fill:#dcfce7,stroke:#4ade80,color:#14532d
+
+  A["Agent\n(the learner)\nPicks actions"] --"Action a"--> E["Environment\n(the world)\nChanges state"]
+  E --"New state s'"--> A
+  E --"Reward r"--> A
+
+  class A agent
+  class E env`
+    },
+    {
+      title: "Step 2: States, actions, and rewards",
+      body: "Three things flow through every RL interaction:\n\n• State (s): the agent's current observation of the world. In chess: the board position. In Atari: the screen pixels. For an LLM: the conversation so far.\n\n• Action (a): what the agent does in that state. In chess: moving a piece. In Atari: pressing a button. For an LLM: generating the next token.\n\n• Reward (r): the feedback signal. A number — positive means 'good move', negative means 'bad move', zero means 'neutral'. The agent's only goal is to maximize the total reward accumulated over time.",
+      whyItMatters: "The reward is the entire learning signal. Unlike supervised learning where you specify the correct output, in RL you only specify what 'good' and 'bad' outcomes look like via the reward function. Designing a good reward function is one of the hardest problems in RL.",
+      diagram: `graph TD
+  classDef state fill:#dbeafe,stroke:#60a5fa,color:#1e3a8a
+  classDef action fill:#6366f1,stroke:#4f46e5,color:#fff
+  classDef reward fill:#dcfce7,stroke:#4ade80,color:#14532d
+  classDef bad fill:#fee2e2,stroke:#f87171,color:#7f1d1d
+
+  S["State s\n'Board position after move 12'\nor 'Screen pixels at frame 847'\nor 'Conversation: user asked X'"] --> A["Agent picks\nAction a"]
+  A --> R_POS["Reward r = +1\n(took a piece / scored points\n/ gave helpful response)"]
+  A --> R_NEG["Reward r = −1\n(lost a piece / died\n/ gave harmful response)"]
+  A --> R_ZERO["Reward r = 0\n(no immediate consequence)"]
+
+  class S state
+  class A action
+  class R_POS,R_ZERO reward
+  class R_NEG bad`
+    },
+    {
+      title: "Step 3: The policy — the agent's brain",
+      body: "The policy (π) is the agent's strategy: given a state, which action should I take?\n\nπ(a | s) = probability of taking action a when in state s\n\nA random policy picks actions at random (terrible but a starting point). An optimal policy always picks the action that maximizes long-term reward.\n\nIn deep RL, the policy is a neural network: it takes the state as input and outputs a probability distribution over actions. Training the neural network to produce better and better policies is what RL training is.",
+      whyItMatters: "The policy is what we're actually training. Everything else in RL — value functions, reward signals, exploration — is infrastructure to help us find a better policy. At the end of training, the policy is the product.",
+      diagram: `graph LR
+  classDef state fill:#dbeafe,stroke:#60a5fa,color:#1e3a8a
+  classDef policy fill:#6366f1,stroke:#4f46e5,color:#fff
+  classDef action fill:#dcfce7,stroke:#4ade80,color:#14532d
+
+  S(["State s\n(observation)"]) --> PI["Policy π(a|s)\n(neural network)\nInputs: state\nOutputs: action probabilities"]
+  PI --> A1["Action: move rook  0.45"]
+  PI --> A2["Action: move queen  0.31"]
+  PI --> A3["Action: move pawn  0.24"]
+
+  class S state
+  class PI policy
+  class A1,A2,A3 action`
+    },
+    {
+      title: "Step 4: The return — thinking long-term",
+      body: "Immediate reward is only part of the picture. RL agents need to think about long-term consequences.\n\nThe return G is the total accumulated reward from a point in time forward:\nG_t = r_t + γ × r_(t+1) + γ² × r_(t+2) + ...\n\nγ (gamma) is the discount factor (0 to 1). It controls how much the agent cares about future rewards:\n• γ = 1: future rewards count just as much as immediate ones (long-sighted)\n• γ = 0.99: care a lot about future rewards\n• γ = 0: only immediate reward matters (short-sighted)\n\nA chess player sacrifices a pawn now (negative immediate reward) to capture a queen later (large positive reward). The discounted return captures this.",
+      whyItMatters: "Without discounting, the agent would weigh rewards 10,000 steps in the future equally to rewards right now — which makes training mathematically unstable for long episodes. Discounting also creates a natural preference for getting rewards sooner rather than later.",
+      diagram: `graph LR
+  classDef t fill:#dbeafe,stroke:#60a5fa,color:#1e3a8a
+  classDef disc fill:#fef3c7,stroke:#f59e0b,color:#78350f
+  classDef total fill:#dcfce7,stroke:#4ade80,color:#14532d
+
+  R0["r₀ = −1\n(sacrifice pawn)\n× γ⁰ = 1.0\n= −1"] --> SUM
+  R1["r₁ = 0\n(opponent moves)\n× γ¹ = 0.99\n= 0"] --> SUM
+  R2["r₂ = +5\n(capture queen)\n× γ² = 0.98\n= +4.9"] --> SUM
+  SUM["G = −1 + 0 + 4.9 = +3.9\n✅ Worth the sacrifice"]
+
+  class R0,R1,R2 disc
+  class SUM total`
+    },
+    {
+      title: "Step 5: The exploration-exploitation dilemma",
+      body: "A key challenge: the agent must balance:\n\n• Exploitation: do what's known to work well (maximize immediate expected reward based on current knowledge)\n• Exploration: try new things that might be even better (potentially discover higher-reward strategies)\n\nIf the agent only exploits, it gets stuck in the first decent strategy it finds — it never discovers that a completely different approach could be much better.\n\nIf it only explores, it keeps trying random things and never capitalizes on what it learned.\n\nThe most common solution: ε-greedy. With probability ε (e.g., 0.1), take a random action (explore). With probability 1−ε, take the best known action (exploit).",
+      whyItMatters: "Exploration is what makes RL fundamentally different from supervised learning. In supervised learning, you're given all the training data upfront. In RL, the agent must generate its own training experience by trying things — which requires deliberately doing non-optimal things to discover what's possible.",
+      diagram: `graph TD
+  classDef explore fill:#fef3c7,stroke:#f59e0b,color:#78350f
+  classDef exploit fill:#dcfce7,stroke:#4ade80,color:#14532d
+  classDef choice fill:#6366f1,stroke:#4f46e5,color:#fff
+
+  STEP["At each step"] --> COIN{"Random draw\n(ε = 0.1)"}
+  COIN --"10% chance: explore"--> RAND["Take random action\n(might find something new)"]
+  COIN --"90% chance: exploit"--> BEST["Take best known action\n(maximize known reward)"]
+  RAND --> LEARN["Learn from outcome"]
+  BEST --> LEARN
+
+  class COIN choice
+  class RAND explore
+  class BEST exploit`
+    },
+    {
+      title: "Step 6: The RL training loop",
+      body: "RL training follows a cycle:\n\n1. Agent observes state s\n2. Agent selects action a (using current policy)\n3. Environment returns new state s' and reward r\n4. Store (s, a, r, s') as experience\n5. Use collected experience to improve the policy\n6. Repeat thousands or millions of times\n\nOver many iterations, the policy improves. The agent discovers that certain sequences of actions lead to much higher total reward, and it shifts probability toward those sequences.\n\nWhen training converges, the agent has found a good policy — it consistently takes actions that lead to high cumulative reward.",
+      whyItMatters: "The core difference from supervised learning: the training data is generated by the agent itself. Better policies generate better experiences, which improve the policy further — a virtuous cycle that leads to emergent competence that often surprises even the people who built the system.",
+      diagram: `graph TD
+  classDef obs fill:#dbeafe,stroke:#60a5fa,color:#1e3a8a
+  classDef act fill:#6366f1,stroke:#4f46e5,color:#fff
+  classDef env fill:#ede9fe,stroke:#8b5cf6,color:#4c1d95
+  classDef learn fill:#dcfce7,stroke:#4ade80,color:#14532d
+
+  OBS["Observe state s"] --> ACT["Select action a\n(via current policy π)"]
+  ACT --> ENV["Environment transitions\ns → s', reward r"]
+  ENV --> STORE["Store (s, a, r, s')\nin replay buffer"]
+  STORE --> UPDATE["Update policy\n(improve based on experience)"]
+  UPDATE --> OBS
+
+  class OBS obs
+  class ACT act
+  class ENV env
+  class STORE,UPDATE learn`
+    },
+  ]}
+/>
+
+<ConceptCheck
+  question="An RL agent plays a game where it receives +10 for winning, −5 for losing, and 0 at all other times. The discount factor γ = 0.9. If the agent is 3 steps away from a guaranteed win, what is the discounted return value of that win?"
+  answer="+10 × γ³ = +10 × (0.9)³ = +10 × 0.729 = +7.29. The future win is worth 7.29 to the agent right now, not the full 10. This discounting is correct behavior — a reward 3 steps away is worth less than an immediate reward, both because of uncertainty (something might go wrong in 3 steps) and because of the mathematical stability benefits of discounting."
+/>
+
+## RL vs. Supervised Learning: When to Use Which
+
+<MermaidDiagram chart={`graph TD
+  classDef sup fill:#dbeafe,stroke:#60a5fa,color:#1e3a8a
+  classDef rl fill:#dcfce7,stroke:#4ade80,color:#14532d
+
+  USE_SL["Use Supervised Learning when:\n──────────────────────────────\n✓ You have labeled examples of correct behavior\n✓ The correct output is well-defined\n✓ You can collect training data in advance\nExamples: image classification, spam detection,\ntranslation, summarization"]
+  USE_RL["Use Reinforcement Learning when:\n──────────────────────────────\n✓ Correct actions aren't known in advance\n✓ Feedback comes from the environment, not labels\n✓ Long sequences of decisions matter\n✓ You can simulate the environment\nExamples: games, robotics, RLHF alignment,\ntrading systems, recommendation engines"]
+
+  class USE_SL sup
+  class USE_RL rl`}
+/>

@@ -1,0 +1,158 @@
+import AnalogyCard from '@/components/interactive/AnalogyCard';
+import StepWalkthrough from '@/components/interactive/StepWalkthrough';
+import MermaidDiagram from '@/components/interactive/MermaidDiagram';
+import ConceptCheck from '@/components/interactive/ConceptCheck';
+
+<AnalogyCard
+  title="Copying skills from one domain to another"
+  body="A surgeon who learns to fly doesn't start from scratch — they transfer their steady hands, spatial reasoning under pressure, and team communication skills. A pianist who learns guitar already has music theory, rhythm, and finger dexterity. In each case, skills from one domain accelerate learning in another. Transfer learning is this idea applied to neural networks: a model trained on one task (or a massive general task like 'predict the next word in all of the internet') has already built internal representations that are useful for many other tasks. Fine-tuning is just the application of transfer learning — we're transferring the model's knowledge to our specific problem."
+/>
+
+## What Actually Transfers?
+
+When we say a pre-trained model "transfers" to a new task, we mean its internal representations — the vectors produced by each layer — are already good starting points for the new task. But what exactly is in those representations?
+
+<MermaidDiagram chart={`graph TD
+  classDef early fill:#dbeafe,stroke:#60a5fa,color:#1e3a8a
+  classDef mid fill:#ede9fe,stroke:#8b5cf6,color:#4c1d95
+  classDef late fill:#7c3aed,stroke:#5b21b6,color:#fff
+  classDef task fill:#dcfce7,stroke:#4ade80,color:#14532d
+
+  E["Early layers\n──────────────\nSyntax, grammar\nPart-of-speech tags\nPhrase boundaries\nTokenization patterns\n→ Transfers to almost any NLP task"]
+  M["Middle layers\n──────────────\nSemantics, meaning\nCoreference (what 'it' refers to)\nEntity types (person, place, org)\nSentiment signals\n→ Transfers to classification, QA"]
+  L["Late layers\n──────────────\nTask-specific patterns\nOutput format preferences\nDomain vocabulary\n→ Most affected by fine-tuning"]
+
+  class E early
+  class M mid
+  class L late`}
+/>
+
+<StepWalkthrough
+  steps={[
+    {
+      title: "Step 1: The frozen feature extractor approach",
+      body: "The simplest form of transfer learning: freeze the entire pre-trained model and only train a small classification head on top.\n\nWorkflow:\n1. Run all your examples through the frozen model\n2. Save the final-layer representations (vectors) for each example\n3. Train a small logistic regression or MLP on top of these vectors\n\nThis is fast because you compute the representations once and only train a tiny head. It works well when your task is similar to the pre-training distribution.\n\nLimitation: if your task requires understanding that the pre-trained model doesn't have, frozen features can't adapt.",
+      whyItMatters: "Frozen feature extraction is the cheapest possible form of transfer learning — no GPU fine-tuning needed. For many classification tasks, you can get 80–90% of fine-tuning quality at 1% of the cost.",
+      diagram: `graph LR
+  classDef frozen fill:#dbeafe,stroke:#60a5fa,color:#1e3a8a
+  classDef head fill:#dcfce7,stroke:#4ade80,color:#14532d
+  classDef flow fill:#6366f1,stroke:#4f46e5,color:#fff
+
+  INPUT(["Input text"]) --> FROZEN["Pre-trained model\n🔒 all weights frozen\n(no gradient computed)"]
+  FROZEN --> VEC["Output vector\n[0.23, -0.87, 0.45, ...]"]
+  VEC --> HEAD["Small classifier head\n✏️ only this trains\n(1–2 linear layers)"]
+  HEAD --> OUT["Class prediction\npositive / negative / neutral"]
+
+  class FROZEN frozen
+  class HEAD head
+  class VEC,OUT flow`
+    },
+    {
+      title: "Step 2: Full fine-tuning — unfreeze everything",
+      body: "At the other extreme: unfreeze all layers and fine-tune the entire model end-to-end on your task. The pre-trained weights are the starting point, but everything can change.\n\nThis is most powerful when:\n• Your task domain is very different from pre-training (e.g., medical or legal text)\n• You have enough data (thousands of examples)\n• You can afford the compute (full gradient computation for all layers)\n\nKey insight: the pre-trained weights provide a warm start. Even with full fine-tuning, you use a much lower learning rate than pre-training and converge in far fewer steps — because you're already close to a good solution.",
+      whyItMatters: "Full fine-tuning can change every layer's representations to suit your task. For significant domain shifts (general English → clinical notes), this flexibility matters more than the cost.",
+      diagram: `graph LR
+  classDef warm fill:#dbeafe,stroke:#60a5fa,color:#1e3a8a
+  classDef active fill:#6366f1,stroke:#4f46e5,color:#fff
+  classDef result fill:#dcfce7,stroke:#4ade80,color:#14532d
+
+  PT["Pre-trained weights\n(warm start)"] --> L1["Layer 1\n✏️ updates with lr=1e-5"]
+  L1 --> L2["Layer 2\n✏️ updates"]
+  L2 --> LN["··· N layers\n✏️ all update"]
+  LN --> HEAD["Task head\n✏️ updates most"]
+  HEAD --> OUT["Fine-tuned model\nspecialized for task"]
+
+  class PT warm
+  class L1,L2,LN,HEAD active
+  class OUT result`
+    },
+    {
+      title: "Step 3: Gradual unfreezing — the best of both worlds",
+      body: "A powerful middle-ground technique: start with most layers frozen, then gradually unfreeze from the top (task-specific layers) down to the bottom (general layers).\n\nSchedule:\n• Epochs 1–2: only the task head trains\n• Epochs 3–4: unfreeze top 2 Transformer layers\n• Epochs 5–6: unfreeze top 4 layers\n• Continue until fully unfrozen\n\nThis prevents the early, unstable training from corrupting the carefully learned lower-layer representations before the task head has settled.",
+      whyItMatters: "Gradual unfreezing is why ULMFiT (2018) was a breakthrough — it showed you could fine-tune a language model on small text datasets without catastrophic forgetting by unfreezing carefully. Many modern fine-tuning recipes still use a variation of this idea.",
+      diagram: `graph TD
+  classDef frozen fill:#dbeafe,stroke:#60a5fa,color:#1e3a8a
+  classDef active fill:#dcfce7,stroke:#4ade80,color:#14532d
+  classDef head fill:#6366f1,stroke:#4f46e5,color:#fff
+
+  EPOCH1["Epochs 1–2\nHead ✏️ · All layers 🔒"] --> EPOCH2["Epochs 3–4\nHead ✏️ · Top 2 layers ✏️ · Rest 🔒"]
+  EPOCH2 --> EPOCH3["Epochs 5–6\nHead ✏️ · Top 4 layers ✏️ · Rest 🔒"]
+  EPOCH3 --> EPOCH4["Epochs 7+\nAll layers ✏️\n(full fine-tuning)"]
+
+  class EPOCH1,EPOCH2,EPOCH3 active
+  class EPOCH4 head`
+    },
+    {
+      title: "Step 4: Learning rate warmup and decay",
+      body: "Pre-trained models are in a delicate equilibrium — their weights encode a carefully balanced set of representations. Starting with a large learning rate can destroy this immediately.\n\nBest practice is a learning rate schedule:\n\n1. Warmup: start with a very small lr (1e-7), gradually increase to your target (1e-5) over the first 5–10% of training steps\n2. Constant or decay: hold at the target lr, or use cosine decay to slowly reduce it as training progresses\n\nWarmup gives the optimizer time to establish momentum in the right direction before taking large steps.",
+      whyItMatters: "Without warmup, the first few batches can produce large gradients that push the weights far from the pre-trained values before training stabilizes. This is a common cause of fine-tuning runs that spike in loss and never recover.",
+      diagram: `graph LR
+  classDef low fill:#dbeafe,stroke:#60a5fa,color:#1e3a8a
+  classDef peak fill:#6366f1,stroke:#4f46e5,color:#fff
+  classDef decay fill:#dcfce7,stroke:#4ade80,color:#14532d
+
+  S1["Steps 1–100\nWarmup phase\nlr: 1e-7 → 1e-5\n(slowly ramp up)"] --> S2["Steps 100–800\nTraining phase\nlr: 1e-5\n(stable learning)"]
+  S2 --> S3["Steps 800–1000\nCosine decay\nlr: 1e-5 → 1e-6\n(slow down near end)"]
+
+  class S1 low
+  class S2 peak
+  class S3 decay`
+    },
+    {
+      title: "Step 5: Task similarity and how much to fine-tune",
+      body: "How much fine-tuning you need depends on how far your task is from the pre-training distribution:\n\n• Very similar (e.g., classification of news articles): just train the head, or short LoRA fine-tune\n• Moderately different (e.g., customer support chat): standard LoRA fine-tune for 1–3 epochs\n• Very different (e.g., clinical medical notes): deeper fine-tuning, possibly full fine-tune upper layers\n• New language/domain (e.g., fine-tuning on Swahili when the model only knows English): significant fine-tuning needed, possibly on domain-specific corpora first\n\nA quick test: prompt the base model with a few examples. If it partially 'gets' the task, you need less fine-tuning. If it's completely off, plan for more.",
+      whyItMatters: "Over-fine-tuning on a too-similar task wastes compute and risks catastrophic forgetting. Under-fine-tuning on a very different task produces a model that never specializes. The quick prompt test saves you from both.",
+      diagram: `graph LR
+  classDef easy fill:#dcfce7,stroke:#4ade80,color:#14532d
+  classDef mid fill:#fef3c7,stroke:#f59e0b,color:#78350f
+  classDef hard fill:#fee2e2,stroke:#f87171,color:#7f1d1d
+
+  EASY["Close to pre-training\n(news classification)\n──────────────────\nHead-only or\nLoRA rank 4–8\n100–500 examples"] --> MID["Moderate shift\n(customer support chat)\n──────────────────\nLoRA rank 16\n1,000–5,000 examples"]
+  MID --> HARD["Large domain shift\n(medical notes)\n──────────────────\nFull fine-tune or\nLoRA rank 64+\n10,000+ examples"]
+
+  class EASY easy
+  class MID mid
+  class HARD hard`
+    },
+    {
+      title: "Step 6: Multi-task transfer — one model, many tasks",
+      body: "Instead of fine-tuning separately for each task, you can fine-tune on a mixture of tasks simultaneously. The model learns shared representations that benefit all tasks at once.\n\nExamples:\n• T5 was pre-trained as a 'text-to-text' model that handles translation, summarization, classification, and QA together\n• Instruction-tuned models (like Llama-3-Instruct) are fine-tuned on thousands of different tasks so they generalize to new instructions\n\nThe risk: if one task dominates the training data, it can crowd out the others. Balance the mixture carefully.",
+      whyItMatters: "Multi-task fine-tuning is how 'instruction-following' models are made — they can handle new tasks described in plain English because they've seen thousands of diverse task descriptions during training.",
+      diagram: `graph TD
+  classDef task fill:#ede9fe,stroke:#8b5cf6,color:#4c1d95
+  classDef model fill:#6366f1,stroke:#4f46e5,color:#fff
+  classDef out fill:#dcfce7,stroke:#4ade80,color:#14532d
+
+  T1["Task A examples\nSummarization"] --> MIX
+  T2["Task B examples\nClassification"] --> MIX
+  T3["Task C examples\nQ&A"] --> MIX
+  T4["Task D examples\nTranslation"] --> MIX
+  MIX[("Mixed training\nbatch")] --> MODEL["Fine-tuned model\nshared representations\nfor all tasks"]
+  MODEL --> GEN["Generalizes to\nnew task descriptions\n(instruction following)"]
+
+  class T1,T2,T3,T4 task
+  class MIX,MODEL model
+  class GEN out`
+    },
+  ]}
+/>
+
+<ConceptCheck
+  question="You're fine-tuning a model for legal document analysis. Legal text is very different from general web text. Should you fine-tune with a learning rate of 1e-3, 1e-5, or 1e-7? And should you use gradual unfreezing or fine-tune all layers at once?"
+  answer="Use 1e-5 (not 1e-3 which would destroy pre-trained knowledge, not 1e-7 which would barely update anything). For gradual unfreezing vs. all at once: since legal text is a large domain shift, gradual unfreezing is the safer choice — start with the upper layers and task head, then progressively unfreeze lower layers once training has stabilized. This preserves the foundational language understanding in the lower layers while allowing the upper layers to adapt to legal vocabulary and reasoning patterns."
+/>
+
+## Transfer Learning in Practice
+
+Transfer learning is the reason modern NLP development is so fast. What used to require months of training and millions of labeled examples now takes hours with hundreds:
+
+<MermaidDiagram chart={`graph LR
+  classDef old fill:#fee2e2,stroke:#f87171,color:#7f1d1d
+  classDef new fill:#dcfce7,stroke:#4ade80,color:#14532d
+
+  OLD["Pre-2018 (no transfer)\n────────────────────\nNeeds: 100k+ labeled examples\nTraining time: days to weeks\nResult: narrow, brittle model\nCost: $10k–$100k+"]
+  NEW["Post-2018 (transfer learning)\n────────────────────\nNeeds: 500–5,000 examples\nTraining time: hours\nResult: capable, general model\nCost: $10–$100"]
+
+  class OLD old
+  class NEW new`}
+/>

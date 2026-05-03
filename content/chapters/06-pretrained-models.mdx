@@ -1,0 +1,159 @@
+import AnalogyCard from '@/components/interactive/AnalogyCard';
+import StepWalkthrough from '@/components/interactive/StepWalkthrough';
+import MermaidDiagram from '@/components/interactive/MermaidDiagram';
+import ConceptCheck from '@/components/interactive/ConceptCheck';
+
+<AnalogyCard
+  title="Hiring an expert who already knows their field"
+  body="Suppose you need someone who understands language deeply — grammar, context, nuance, world knowledge. You could hire a recent graduate and train them from scratch over years. Or you could hire someone who already spent a decade immersed in text — reading millions of books, articles, conversations — and already understands how language works. You just need to brief them on your specific job. That's what a pre-trained model is: a neural network that has already done the hard general learning, so you only need to teach it your specific task."
+/>
+
+## The Training Problem
+
+Training a large neural network from scratch requires:
+- **Enormous datasets**: GPT-3 was trained on ~500 billion tokens of text
+- **Massive compute**: weeks to months on thousands of GPUs
+- **Huge cost**: GPT-3's training is estimated at $4–12 million USD
+
+For almost every practical application, training from scratch is not feasible. Pre-trained models solve this by front-loading the expensive general learning so you don't have to.
+
+<MermaidDiagram chart={`graph LR
+  classDef expensive fill:#fee2e2,stroke:#f87171,color:#7f1d1d
+  classDef smart fill:#dcfce7,stroke:#4ade80,color:#14532d
+  classDef you fill:#6366f1,stroke:#4f46e5,color:#fff
+
+  SCRATCH["Train from scratch\n────────────────\n500B tokens\n10,000 GPUs\n$10M cost\n3 months\n😱"] --> RESULT["General language\nunderstanding"]
+  PRETRAINED["Download pre-trained model\n────────────────\n~30 seconds\n1 GPU\n~$0\n🎉"] --> RESULT
+
+  RESULT --> YOU["Your application\nfine-tune for your task\n(hours, not months)"]
+
+  class SCRATCH expensive
+  class PRETRAINED smart
+  class YOU you`}
+/>
+
+<StepWalkthrough
+  steps={[
+    {
+      title: "Step 1: What a model learns during pre-training",
+      body: "Large language models are pre-trained using a simple objective: predict the next word (or masked word). Feed in billions of sentences, and for each one, the model tries to predict what comes next. That's it.\n\nBut to predict text well, the model is forced to learn an enormous amount:\n• Grammar and syntax\n• Facts about the world\n• Logical relationships\n• Writing styles and registers\n• How context changes meaning\n\nAll of this knowledge is compressed into the model's weights.",
+      whyItMatters: "The 'predict next token' objective is deceptively powerful. It forces the model to build rich internal representations of language — which turn out to be useful for almost every language task.",
+      diagram: `graph TD
+  classDef data fill:#dbeafe,stroke:#60a5fa,color:#1e3a8a
+  classDef task fill:#6366f1,stroke:#4f46e5,color:#fff
+  classDef learns fill:#dcfce7,stroke:#4ade80,color:#14532d
+
+  D[("500B tokens\nnews · books · code · web")] --> T["Pre-training objective:\npredict next token"]
+  T --> L1["✓ Grammar & syntax"]
+  T --> L2["✓ World knowledge"]
+  T --> L3["✓ Reasoning patterns"]
+  T --> L4["✓ Contextual meaning"]
+  L1 & L2 & L3 & L4 --> W["Compressed into\nmodel weights"]
+
+  class D data
+  class T task
+  class L1,L2,L3,L4,W learns`
+    },
+    {
+      title: "Step 2: The model as a learned representation",
+      body: "After pre-training, the model's weights encode rich representations of concepts. When you feed in a sentence, the hidden layers produce vectors — numerical summaries — that capture the meaning of the text.\n\nThese representations are the valuable thing. They're not just for text generation — they can be repurposed for any task involving language: classification, question answering, translation, summarization, and more.\n\nThis is why pre-trained models are sometimes called 'foundation models' — they're a foundation you build on.",
+      whyItMatters: "The representations learned during pre-training transfer across tasks. A representation of 'the patient is feverish' that captures medical context is useful whether you're classifying diagnoses or generating clinical notes.",
+      diagram: `graph LR
+  classDef inp fill:#dbeafe,stroke:#60a5fa,color:#1e3a8a
+  classDef layer fill:#ede9fe,stroke:#8b5cf6,color:#4c1d95
+  classDef rep fill:#fef3c7,stroke:#f59e0b,color:#78350f
+  classDef tasks fill:#dcfce7,stroke:#4ade80,color:#14532d
+
+  T(["'The patient is feverish'"]) --> L["Pre-trained model\n(frozen weights)"]
+  L --> R["Rich vector representation\n[0.23, -0.87, 0.45, ...]"]
+  R --> CLS["Classify: medical / legal / other"]
+  R --> SUM["Summarize in one sentence"]
+  R --> QA["Answer: 'Is the patient sick?'"]
+
+  class T inp
+  class L layer
+  class R rep
+  class CLS,SUM,QA tasks`
+    },
+    {
+      title: "Step 3: Families of pre-trained models",
+      body: "Different pre-training objectives produce models suited for different tasks:\n\n• **Encoder-only** (BERT, RoBERTa): bidirectional attention — reads the whole sentence at once. Best for classification and extraction tasks.\n• **Decoder-only** (GPT series, LLaMA, Mistral): autoregressive — predicts left-to-right. Best for generation, chat, completion.\n• **Encoder-decoder** (T5, BART): reads input fully then generates output. Best for translation, summarization, question answering with structured output.\n\nFor fine-tuning, you pick the family that matches your task type.",
+      whyItMatters: "Architecture choice is a design decision that comes before fine-tuning. Picking an encoder-only model for generation will produce poor results no matter how well you fine-tune it.",
+      diagram: `graph TD
+  classDef enc fill:#dbeafe,stroke:#60a5fa,color:#1e3a8a
+  classDef dec fill:#ede9fe,stroke:#8b5cf6,color:#4c1d95
+  classDef encdec fill:#dcfce7,stroke:#4ade80,color:#14532d
+
+  BERT["BERT / RoBERTa\n(Encoder only)\n──────────────\nBidirectional attention\nSees full context\n✓ Classification\n✓ Named entity recognition\n✓ Sentence similarity"]
+  GPT["GPT / LLaMA / Mistral\n(Decoder only)\n──────────────\nLeft-to-right generation\n✓ Chat & instruction-following\n✓ Code generation\n✓ Creative writing"]
+  T5["T5 / BART\n(Encoder-Decoder)\n──────────────\nRead then generate\n✓ Translation\n✓ Summarization\n✓ Q&A with long output"]
+
+  class BERT enc
+  class GPT dec
+  class T5 encdec`
+    },
+    {
+      title: "Step 4: Model size and the scaling laws",
+      body: "Larger models are generally more capable — this relationship follows predictable scaling laws. But 'larger' comes in two dimensions:\n\n• **Parameters**: number of weights (7B, 13B, 70B, 175B...)\n• **Training data**: number of tokens seen\n\nThe Chinchilla paper (2022) showed that optimal training requires ~20 tokens per parameter. A 7B model should be trained on ~140B tokens.\n\nFor practical use: 7B–13B models run on a single consumer GPU. 70B models need multiple GPUs or quantization. 175B+ models require specialized infrastructure.",
+      whyItMatters: "You don't always need the biggest model. A well-trained 7B model often outperforms a poorly-trained 70B model on specific tasks. Fine-tuning a smaller model that fits on your hardware beats not running a larger model at all.",
+      diagram: `graph LR
+  classDef small fill:#dcfce7,stroke:#4ade80,color:#14532d
+  classDef mid fill:#fef3c7,stroke:#f59e0b,color:#78350f
+  classDef large fill:#fee2e2,stroke:#f87171,color:#7f1d1d
+
+  S["Small (1–7B)\n────────────────\n✓ Single GPU (8–24 GB)\n✓ Fast inference\n✓ Easy to fine-tune\n~ Good for specific tasks"]
+  M["Medium (13–34B)\n────────────────\n~ High-end single GPU\n~ Slower inference\n~ Moderate fine-tune cost\n~ Strong general capability"]
+  L["Large (70B+)\n────────────────\n✗ Multi-GPU required\n✗ Expensive inference\n✗ Hard to fine-tune\n✓ Best general performance"]
+
+  class S small
+  class M mid
+  class L large`
+    },
+    {
+      title: "Step 5: Downloading and using a pre-trained model",
+      body: "Pre-trained models are available on the Hugging Face Model Hub. The typical workflow:\n\n1. Pick a base model (e.g. Llama-3-8B, Mistral-7B)\n2. Download the weights using `transformers` library\n3. Use the model as-is for inference, or\n4. Fine-tune it for your specific task (next chapters)\n\nThe weights file might be 4–140 GB depending on model size. Quantized versions (4-bit, 8-bit) are much smaller with minimal quality loss.",
+      whyItMatters: "The fact that weights are downloadable and reusable is what makes modern AI accessible. You're building on top of thousands of GPU-years of compute that someone else paid for.",
+      diagram: `graph LR
+  classDef hub fill:#6366f1,stroke:#4f46e5,color:#fff
+  classDef local fill:#ede9fe,stroke:#8b5cf6,color:#4c1d95
+  classDef use fill:#dcfce7,stroke:#4ade80,color:#14532d
+
+  HUB["🤗 Hugging Face Hub\nmeta-llama/Llama-3-8B\nmistralai/Mistral-7B\ngoogle/gemma-7b\n..."] --> DL["Download weights\n(4–16 GB)"]
+  DL --> LOCAL["Local model\n(your machine or cloud GPU)"]
+  LOCAL --> INF["Inference as-is\n→ chat, completion"]
+  LOCAL --> FT["Fine-tune for task\n→ your specialized model"]
+
+  class HUB hub
+  class LOCAL local
+  class INF,FT use`
+    },
+  ]}
+/>
+
+<ConceptCheck
+  question="You want to build a sentiment classifier that labels customer reviews as positive, negative, or neutral. Should you use an encoder-only model (like BERT) or a decoder-only model (like GPT)? Why?"
+  answer="Encoder-only (BERT). Sentiment classification is an understanding task — you need to read the full sentence and produce a single label. Encoder-only models see the entire context bidirectionally, making them better at understanding and classification. Decoder-only models are optimized for generating text left-to-right, which is overkill (and less accurate) for a simple classification label."
+/>
+
+## The Modern AI Development Workflow
+
+Almost no one trains from scratch anymore. The standard workflow is:
+
+<MermaidDiagram chart={`graph LR
+  classDef base fill:#dbeafe,stroke:#60a5fa,color:#1e3a8a
+  classDef ft fill:#ede9fe,stroke:#8b5cf6,color:#4c1d95
+  classDef rl fill:#fef3c7,stroke:#f59e0b,color:#78350f
+  classDef prod fill:#dcfce7,stroke:#4ade80,color:#14532d
+
+  B["Base pre-trained model\n(trained by OpenAI, Meta, Google...)\n175B+ tokens, billions of $"] --> FT["Fine-tune on your task\n(Chapter 8–18)\nHours to days, $10–$1000"]
+  FT --> RL["Optional: RLHF alignment\n(Chapter 29)\nDays, more $"]
+  RL --> PROD["✅ Your production model\nspecialized for your use case"]
+  FT --> PROD
+
+  class B base
+  class FT ft
+  class RL rl
+  class PROD prod`}
+/>
+
+This is the pipeline the rest of this course will walk through in detail.

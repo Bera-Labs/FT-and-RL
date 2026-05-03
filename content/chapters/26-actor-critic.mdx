@@ -1,0 +1,198 @@
+import AnalogyCard from '@/components/interactive/AnalogyCard';
+import StepWalkthrough from '@/components/interactive/StepWalkthrough';
+import MermaidDiagram from '@/components/interactive/MermaidDiagram';
+import ConceptCheck from '@/components/interactive/ConceptCheck';
+
+<AnalogyCard
+  title="A player and a coach working together"
+  body="Imagine a tennis player (the actor) and their coach (the critic) working as a team. The player makes the actual shots — they take the actions. The coach watches from the sideline, evaluating each shot: 'that serve was excellent, 30% better than your average'; 'that backhand was poor, you should have gone cross-court.' The player uses this feedback to adjust their technique immediately, not just at the end of the match. The coach, meanwhile, gets better at judging shots as they watch more matches. Both improve together. This is Actor-Critic: two neural networks — one that acts, one that evaluates — learning simultaneously and making each other better."
+/>
+
+## Combining Value-Based and Policy-Based RL
+
+Actor-Critic methods unify the strengths of both approaches:
+- **Policy gradient** (actor): learns the policy directly — works with any action space
+- **Value function** (critic): estimates how good each state is — provides low-variance feedback
+
+<MermaidDiagram chart={`graph LR
+  classDef actor fill:#6366f1,stroke:#4f46e5,color:#fff
+  classDef critic fill:#dbeafe,stroke:#60a5fa,color:#1e3a8a
+  classDef benefit fill:#dcfce7,stroke:#4ade80,color:#14532d
+
+  ACTOR["Actor π_θ(a|s)\n──────────────────\nNeural network\nOutputs: action probabilities\nUpdated by: policy gradient\nUsing: critic's advantage estimate"]
+  CRITIC["Critic V_φ(s)\n──────────────────\nNeural network\nOutputs: state value estimate\nUpdated by: TD error\nProvides: baseline for actor"]
+
+  ACTOR --> BENEFIT["Benefits of combination\n──────────────────\n✓ Low variance (critic baseline)\n✓ Online learning (no full episode needed)\n✓ Works for any action space\n✓ Better sample efficiency than REINFORCE"]
+
+  class ACTOR actor
+  class CRITIC critic
+  class BENEFIT benefit`}
+/>
+
+<StepWalkthrough
+  steps={[
+    {
+      title: "Step 1: The actor — the policy network",
+      body: "The actor is a neural network π_θ(a|s) that maps states to action probabilities. It's exactly the policy network from Chapter 25.\n\nAt each step:\n1. Observe current state s\n2. Feed s through the actor network\n3. Sample action a from the output distribution\n4. Execute a in the environment\n\nThe actor is updated using a policy gradient, but instead of using the raw return G_t (high variance), it uses the advantage estimate A(s, a) provided by the critic (much lower variance).",
+      whyItMatters: "The actor's job is simple: map states to actions. All the complexity of estimating 'how good was that action' is outsourced to the critic, which can do a much better job because it uses a learned value function rather than noisy Monte Carlo returns.",
+      diagram: `graph LR
+  classDef state fill:#dbeafe,stroke:#60a5fa,color:#1e3a8a
+  classDef actor fill:#6366f1,stroke:#4f46e5,color:#fff
+  classDef action fill:#dcfce7,stroke:#4ade80,color:#14532d
+
+  S(["State s\n(observation)"]) --> ACT["Actor network π_θ\n(policy neural network)"]
+  ACT --> PROBS["Action probabilities\nP(a₁) = 0.6\nP(a₂) = 0.3\nP(a₃) = 0.1"]
+  PROBS --> SAMPLE["Sample → execute a₁\nObserve r, s'"]
+
+  class S state
+  class ACT actor
+  class PROBS,SAMPLE action`
+    },
+    {
+      title: "Step 2: The critic — the value network",
+      body: "The critic is a neural network V_φ(s) that estimates the value of each state: 'if we're in state s right now and follow the current policy, how much reward do we expect to collect in total?'\n\nThe critic is trained using TD learning:\n• Target: r + γ × V_φ(s')\n• Loss: (V_φ(s) − target)²\n• Update: reduce the prediction error (same as supervised regression)\n\nAs the critic gets better, its estimates become more accurate, which means the advantage estimates it provides to the actor become more reliable, which means the actor improves more efficiently.",
+      whyItMatters: "The critic's accuracy directly determines the quality of the actor's learning signal. An inaccurate critic provides noisy advantages — almost as bad as no baseline. This is why both networks must be trained simultaneously and carefully.",
+      diagram: `graph LR
+  classDef state fill:#dbeafe,stroke:#60a5fa,color:#1e3a8a
+  classDef critic fill:#ede9fe,stroke:#8b5cf6,color:#4c1d95
+  classDef update fill:#dcfce7,stroke:#4ade80,color:#14532d
+
+  S(["State s"]) --> CRIT["Critic V_φ(s)\n(value neural network)"]
+  CRIT --> VEST["V_φ(s) = 4.2\n(expected future reward)"]
+  R["Observed reward r=1\nnext state s'"] --> TARGET["TD target:\nr + γ V_φ(s') = 1 + 0.9×3.8 = 4.42"]
+  VEST --> LOSS["TD error = 4.42 − 4.2 = 0.22\nLoss = (0.22)²\n→ update φ"]
+
+  class S state
+  class CRIT critic
+  class VEST,R,TARGET,LOSS update`
+    },
+    {
+      title: "Step 3: The advantage function",
+      body: "The advantage A(s, a) measures how much better action a is compared to the average action in state s:\n\nA(s, a) = Q(s, a) − V(s)\n\nIn practice, we estimate it as the TD error:\nA(s, a) ≈ r + γ × V(s') − V(s)\n\nThis is called the one-step TD advantage. It answers: 'After taking action a and landing in s', did things turn out better or worse than expected (V(s))?'\n\n• Positive advantage: this action was better than average — increase its probability\n• Negative advantage: this action was worse than average — decrease its probability\n• Zero advantage: about average — no update needed",
+      whyItMatters: "The advantage is a dramatically better learning signal than the raw return. A return of +30 is ambiguous — was it good or bad? Depends on the state. An advantage of +5 clearly says 'this action was 5 points better than the typical action in this state.' This specificity reduces variance and speeds learning.",
+      diagram: `graph LR
+  classDef adv fill:#6366f1,stroke:#4f46e5,color:#fff
+  classDef good fill:#dcfce7,stroke:#4ade80,color:#14532d
+  classDef bad fill:#fee2e2,stroke:#f87171,color:#7f1d1d
+
+  S["State s\nV(s) = 5.0\n(baseline expectation)"] --> ACT
+  ACT{"Take action a"} --> SP["Next state s'\nR = 2\nV(s') = 4.5\nTD target = 2 + 0.9×4.5 = 6.05"]
+  SP --> ADV["Advantage = 6.05 − 5.0 = +1.05\n→ action was BETTER than expected\n→ increase probability of a in s"]
+
+  class S adv
+  class SP,ADV good`
+    },
+    {
+      title: "Step 4: The Actor-Critic update loop",
+      body: "Both networks update simultaneously at every step (or every few steps):\n\nAt each timestep t:\n1. Actor selects action a_t using π_θ(a|s_t)\n2. Environment returns r_t and s_{t+1}\n3. Critic computes advantage: A_t = r_t + γV_φ(s_{t+1}) − V_φ(s_t)\n4. Actor update: θ ← θ + α_actor × A_t × ∇_θ log π_θ(a_t|s_t)\n5. Critic update: φ ← φ − α_critic × (V_φ(s_t) − [r_t + γV_φ(s_{t+1})])²\n\nNote: the critic target uses the current critic values — this is bootstrapping (using estimates to improve estimates), same as Q-learning.",
+      whyItMatters: "Online (step-by-step) updates are a major advantage over REINFORCE (which needs complete episodes). Actor-Critic can be applied to infinite-horizon problems, very long episodes, or real-time settings where waiting for an episode to end is impractical.",
+      diagram: `graph TD
+  classDef obs fill:#dbeafe,stroke:#60a5fa,color:#1e3a8a
+  classDef actor fill:#6366f1,stroke:#4f46e5,color:#fff
+  classDef critic fill:#ede9fe,stroke:#8b5cf6,color:#4c1d95
+  classDef update fill:#dcfce7,stroke:#4ade80,color:#14532d
+
+  S["Observe s_t"] --> ACT["Actor → sample a_t"]
+  ACT --> ENV["Execute a_t → r_t, s_{t+1}"]
+  ENV --> ADV["Advantage:\nA_t = r_t + γV(s_{t+1}) − V(s_t)"]
+  ADV --> UACTOR["Update actor:\nθ += α × A_t × ∇log π(a_t|s_t)"]
+  ADV --> UCRITIC["Update critic:\nφ -= α × (V(s_t) − target)²"]
+  UACTOR & UCRITIC --> S
+
+  class S obs
+  class ACT actor
+  class ADV,UCRITIC critic
+  class UACTOR update`
+    },
+    {
+      title: "Step 5: Generalized Advantage Estimation (GAE)",
+      body: "One-step TD advantage (A = r + γV(s') − V(s)) is low variance but biased (depends on the accuracy of V). Using the actual full return G_t is unbiased but high variance.\n\nGeneralized Advantage Estimation (GAE) interpolates between these extremes with a parameter λ (0 to 1):\n\nA^GAE = Σ_k (γλ)^k × δ_{t+k}\n\nwhere δ_t = r_t + γV(s_{t+1}) − V(s_t) is the one-step TD error.\n\n• λ = 0: one-step TD advantage (low variance, potentially biased)\n• λ = 1: full-return advantage (unbiased, high variance)\n• λ = 0.95: popular sweet spot (near-unbiased, reduced variance)\n\nGAE is used in PPO (Chapter 27) as the default advantage estimator.",
+      whyItMatters: "GAE is a key technique in production RL. The λ parameter lets you tune the bias-variance tradeoff for your specific environment. Environments with good value function estimates benefit from low λ; environments where the critic is inaccurate benefit from higher λ.",
+      diagram: `graph LR
+  classDef low fill:#dcfce7,stroke:#4ade80,color:#14532d
+  classDef high fill:#fef3c7,stroke:#f59e0b,color:#78350f
+  classDef gae fill:#6366f1,stroke:#4f46e5,color:#fff
+
+  L0["λ = 0\nOne-step TD\nA = r + γV(s') − V(s)\n✓ Low variance\n⚠️ Biased (trust V)"] --> GAE
+  L1["λ = 1\nFull return\nA = G_t − V(s)\n✓ Unbiased\n⚠️ High variance"] --> GAE
+  GAE["GAE (λ = 0.95)\n✓ Near-unbiased\n✓ Reduced variance\n✅ Best of both"]
+
+  class L0 low
+  class L1 high
+  class GAE gae`
+    },
+    {
+      title: "Step 6: Shared networks and entropy bonus",
+      body: "In practice, actor and critic often share lower network layers:\n\n• Shared layers: process the state and produce a common representation\n• Actor head: thin layer on top → action probabilities\n• Critic head: thin layer on top → state value estimate\n\nSharing saves parameters and can improve learning (both heads benefit from the same representation).\n\nEntropy bonus: a common addition to the actor loss:\nL_actor = −E[A × log π(a|s)] − β × H(π(·|s))\n\nThe entropy bonus H encourages the policy to stay diverse (not collapse to always picking one action). β is a small coefficient (0.01). This is a form of exploration regularization.",
+      whyItMatters: "Entropy regularization prevents premature convergence — the actor committing too strongly to actions early in training before it's had enough experience to be sure. This helps in complex environments where the early-learned policy might be locally good but globally suboptimal.",
+      diagram: `graph LR
+  classDef shared fill:#dbeafe,stroke:#60a5fa,color:#1e3a8a
+  classDef head fill:#6366f1,stroke:#4f46e5,color:#fff
+  classDef entropy fill:#fef3c7,stroke:#f59e0b,color:#78350f
+
+  S(["State s"]) --> SHARED["Shared layers\n(extract state representation)"]
+  SHARED --> ACTOR["Actor head\n→ π(a|s)\naction probs"]
+  SHARED --> CRITIC["Critic head\n→ V(s)\nstate value"]
+  ACTOR --> ENT["Entropy bonus\n−β × Σ π log π\n(encourages diversity)"]
+
+  class SHARED shared
+  class ACTOR,CRITIC head
+  class ENT entropy`
+    },
+  ]}
+/>
+
+<ConceptCheck
+  question="During Actor-Critic training, the critic estimates V(s) = 8.0 for the current state. The agent takes an action and receives reward r = 1, and the critic estimates V(s') = 6.0. What is the one-step advantage, and what does it tell us about the quality of the action taken?"
+  answer="TD target = r + γ × V(s') = 1 + 0.9 × 6.0 = 6.4. Advantage A = TD target − V(s) = 6.4 − 8.0 = −1.6. The advantage is negative, meaning this action led to a worse outcome than the baseline expectation (8.0). The action was suboptimal — after taking it, we ended up in a state worth 6.4 discounted, when we expected 8.0. The actor will decrease the probability of this action in this state."
+/>
+
+## N-Step Returns: Bridging TD and Monte Carlo
+
+The one-step advantage from Step 3 (A = r + γV(s') − V(s)) bootstraps off a single step. The full-return advantage from REINFORCE uses all future rewards with no bootstrapping. **N-step returns** sit between these extremes, and understanding them clarifies what GAE is actually computing.
+
+An n-step return uses the actual rewards for the next n steps, then bootstraps from the value estimate at step n:
+
+```
+G_t^(1)  =  r_t + γ V(s_{t+1})                         (1-step TD)
+G_t^(2)  =  r_t + γ r_{t+1} + γ² V(s_{t+2})            (2-step return)
+G_t^(n)  =  r_t + γ r_{t+1} + ... + γⁿ V(s_{t+n})      (n-step return)
+G_t^(∞)  =  r_t + γ r_{t+1} + γ² r_{t+2} + ...         (Monte Carlo)
+```
+
+<MermaidDiagram chart={`graph LR
+  classDef td fill:#dbeafe,stroke:#60a5fa,color:#1e3a8a
+  classDef nstep fill:#ede9fe,stroke:#8b5cf6,color:#4c1d95
+  classDef mc fill:#fef3c7,stroke:#f59e0b,color:#78350f
+  classDef gae fill:#6366f1,stroke:#4f46e5,color:#fff
+
+  TD["1-step TD\nA = r + γV(s') − V(s)\n✓ Low variance\n✗ Biased (depends on V accuracy)\n✗ Slow reward propagation"] --> GAE_N
+  N2["2-step return\nA = r + γr' + γ²V(s'') − V(s)\n(real rewards for 2 steps)"] --> GAE_N
+  MC["Monte Carlo (∞-step)\nA = G_t − V(s)\n✓ Unbiased\n✗ High variance\n✗ Needs complete episode"] --> GAE_N
+  GAE_N["GAE (λ=0.95)\nExponentially weighted sum of\nall n-step estimates\nA^GAE = Σ (γλ)^k δ_{t+k}\n✅ Practical best of all worlds"]
+
+  class TD td
+  class N2 nstep
+  class MC mc
+  class GAE_N gae`}
+/>
+
+**Why reward propagation matters:** With a 1-step advantage, a reward discovered 10 steps in the future takes 10 training iterations to propagate back to the actions that caused it. With n-step returns or GAE (λ close to 1), that reward propagates much faster — the agent learns more quickly that earlier actions led to the eventual reward.
+
+**In RLHF context:** language model generation is a single episode where the reward arrives only at the end (after the full response is scored). PPO uses GAE with λ=0.95 to propagate this end-of-response reward backward through all 200+ token generation steps efficiently.
+
+## Actor-Critic in Context
+
+<MermaidDiagram chart={`graph LR
+  classDef base fill:#dbeafe,stroke:#60a5fa,color:#1e3a8a
+  classDef modern fill:#dcfce7,stroke:#4ade80,color:#14532d
+
+  AC["Actor-Critic\n(base method)"] --> A2C["A2C\nSynchronous parallel actors"]
+  AC --> A3C["A3C\nAsynchronous parallel actors"]
+  AC --> PPO["PPO (Chapter 27)\nClipped surrogate objective\n→ standard for RLHF"]
+  AC --> SAC["SAC\nSoft Actor-Critic\nMaximum entropy RL"]
+  AC --> TRPO["TRPO\nTrust Region Policy Optimization\nPPO's predecessor"]
+
+  class AC base
+  class A2C,A3C,PPO,SAC,TRPO modern`}
+/>

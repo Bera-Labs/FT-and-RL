@@ -1,0 +1,160 @@
+import AnalogyCard from '@/components/interactive/AnalogyCard';
+import StepWalkthrough from '@/components/interactive/StepWalkthrough';
+import MermaidDiagram from '@/components/interactive/MermaidDiagram';
+import ConceptCheck from '@/components/interactive/ConceptCheck';
+
+<AnalogyCard
+  title="Every choice depends only on where you are now"
+  body="Imagine you're playing chess and it's your turn. Does it matter how you got to the current board position? Not really — the right move depends on where the pieces are now, not on the sequence of moves that led here. You don't need to remember game history to make the best decision. This property — that the future depends only on the present state, not on the past — is called the Markov property. It's the foundational assumption behind almost all RL algorithms, formalized as a Markov Decision Process (MDP). Understanding MDPs gives you the mathematical vocabulary that every RL paper and algorithm uses."
+/>
+
+## The Markov Property
+
+A process has the Markov property if: **the future depends only on the current state, not on the history of how you got there.**
+
+Formally: P(s_{t+1} | s_t, a_t) = P(s_{t+1} | s_0, a_0, s_1, a_1, ..., s_t, a_t)
+
+In plain English: knowing the current state tells you everything useful. The past provides no additional information.
+
+<MermaidDiagram chart={`graph LR
+  classDef markov fill:#dcfce7,stroke:#4ade80,color:#14532d
+  classDef non fill:#fee2e2,stroke:#f87171,color:#7f1d1d
+
+  M["✅ Markov (history doesn't matter)\n──────────────────────────────\nChess: current board = full info\nGrid world: current position = full info\nAtari with full screen: pixels = full state\nFuture outcomes: P(next | current) is sufficient"]
+  NM["⚠️ Non-Markov (history matters)\n──────────────────────────────\nPoker: hidden cards not in state\nRobotics: velocity not measured\nPartially observable environments\nFix: stack last N frames to approximate state"]
+
+  class M markov
+  class NM non`}
+/>
+
+<StepWalkthrough
+  steps={[
+    {
+      title: "Step 1: Formal MDP definition",
+      body: "An MDP is defined by a tuple (S, A, P, R, γ):\n\n• S: the state space (all possible states)\n• A: the action space (all possible actions)\n• P(s' | s, a): transition function — probability of landing in state s' when taking action a in state s\n• R(s, a, s'): reward function — reward received when taking action a in state s and transitioning to s'\n• γ: discount factor (0 to 1)\n\nThis tuple completely describes the environment. If you know all five components, you know everything there is to know about the RL problem. Most real-world RL is about learning a good policy when P and R are unknown — you can only observe samples from them.",
+      whyItMatters: "The MDP formalism is why RL algorithms are so general — any problem that can be cast as an MDP (state, action, reward) can be attacked with the same set of algorithms. Video games, robotics, drug discovery, and LLM alignment are all MDPs with different S, A, and R.",
+      diagram: `graph TD
+  classDef comp fill:#6366f1,stroke:#4f46e5,color:#fff
+  classDef desc fill:#ede9fe,stroke:#8b5cf6,color:#4c1d95
+
+  MDP["MDP = (S, A, P, R, γ)"] --> S["S: State space\n{all possible observations}"]
+  MDP --> A["A: Action space\n{all possible moves}"]
+  MDP --> P["P(s'|s,a): Transition function\n'how the world responds'"]
+  MDP --> R["R(s,a,s'): Reward function\n'what the agent gets'"]
+  MDP --> G["γ: Discount factor\n'how much future matters'"]
+
+  class MDP comp
+  class S,A,P,R,G desc`
+    },
+    {
+      title: "Step 2: The Bellman equation — the core RL identity",
+      body: "The Bellman equation connects the value of a state to the values of its successor states:\n\nV(s) = max_a [ R(s,a) + γ × Σ P(s'|s,a) × V(s') ]\n\nIn plain English: 'The value of state s equals the reward I get now, plus the discounted value of the state I'll land in next, optimized over my choice of action.'\n\nThis recursive definition is the foundation of almost every RL algorithm. If you know V for all states, you can find the optimal policy: in each state, pick the action that leads to the highest-value successor state.",
+      whyItMatters: "The Bellman equation turns the problem of learning a policy into the problem of learning a value function. And value functions can be learned incrementally — you don't need to solve the whole problem at once, just iteratively improve your estimates.",
+      diagram: `graph LR
+  classDef state fill:#dbeafe,stroke:#60a5fa,color:#1e3a8a
+  classDef eq fill:#6366f1,stroke:#4f46e5,color:#fff
+  classDef next fill:#dcfce7,stroke:#4ade80,color:#14532d
+
+  S["V(s) = ?"] --> B["= max over actions of:\nR(s,a) + γ × Σ P(s'|s,a) × V(s')"]
+  B --> R["Immediate reward\nR(s,a)"]
+  B --> FUTURE["Discounted future value\nγ × expected V(next state)"]
+  R --> V["Value estimate V(s)"]
+  FUTURE --> V
+
+  class S state
+  class B eq
+  class R,FUTURE,V next`
+    },
+    {
+      title: "Step 3: Value iteration — solving known MDPs",
+      body: "If you know P and R completely (model-based RL or planning), you can solve the MDP with value iteration:\n\n1. Initialize V(s) = 0 for all states\n2. For each state s, compute: V(s) ← max_a [ R(s,a) + γ × Σ P(s'|s,a) × V(s') ]\n3. Repeat step 2 until V stops changing\n4. Extract policy: π(s) = argmax_a [ R(s,a) + γ × Σ P(s'|s,a) × V(s') ]\n\nThis converges to the optimal value function and optimal policy. It's not used in practice for large state spaces (too slow), but it's the conceptual root of all other RL algorithms.",
+      whyItMatters: "Value iteration proves that MDPs have well-defined optimal solutions. Every practical RL algorithm (Q-learning, PPO, etc.) is an approximation of value iteration — trying to find the same optimal values, but without knowing P and R upfront, and with function approximation for large state spaces.",
+      diagram: `graph TD
+  classDef init fill:#dbeafe,stroke:#60a5fa,color:#1e3a8a
+  classDef update fill:#6366f1,stroke:#4f46e5,color:#fff
+  classDef converge fill:#dcfce7,stroke:#4ade80,color:#14532d
+
+  INIT["V(s) = 0 for all states"] --> UPDATE["For each state:\nV(s) = max_a [R(s,a) + γ ΣP×V(s')]"]
+  UPDATE --> CHECK{"V changed\n> threshold?"}
+  CHECK --"Yes — keep going"--> UPDATE
+  CHECK --"No — converged"--> POLICY["Extract policy:\nπ(s) = argmax_a of Bellman eq"]
+  POLICY --> DONE["✅ Optimal policy found"]
+
+  class INIT init
+  class UPDATE update
+  class CHECK update
+  class POLICY,DONE converge`
+    },
+    {
+      title: "Step 4: The Q-function — value of (state, action) pairs",
+      body: "Instead of V(s) (value of a state), we often work with Q(s, a) — the value of taking action a in state s, then following the optimal policy:\n\nQ(s, a) = R(s, a) + γ × Σ P(s'|s,a) × max_{a'} Q(s', a')\n\nWhy Q instead of V? Because with Q, extracting the policy is trivial:\nπ(s) = argmax_a Q(s, a)   ← just pick the action with highest Q value\n\nYou don't need to know P to use Q. This makes Q-functions useful for model-free RL (where you learn from experience, not from a known model).",
+      whyItMatters: "Q-functions are the foundation of Q-learning (Chapter 23) and DQN (Chapter 24). They're particularly powerful because once you have Q(s, a) for all states and actions, you have the complete optimal policy — no additional computation needed.",
+      diagram: `graph LR
+  classDef state fill:#dbeafe,stroke:#60a5fa,color:#1e3a8a
+  classDef q fill:#6366f1,stroke:#4f46e5,color:#fff
+  classDef policy fill:#dcfce7,stroke:#4ade80,color:#14532d
+
+  S(["State s"]) --> Q["Q(s, a) for each action\nQ(s, left) = 2.3\nQ(s, right) = 4.7\nQ(s, up) = 1.1\nQ(s, down) = 3.2"]
+  Q --> PI["Policy:\nπ(s) = argmax_a Q(s,a)\n= right (4.7 is highest)"]
+
+  class S state
+  class Q q
+  class PI policy`
+    },
+    {
+      title: "Step 5: Model-based vs. model-free RL",
+      body: "Two broad approaches to RL:\n\n• Model-based: learn (or be given) the transition function P(s'|s,a) and reward function R. Then use this model to plan optimal actions. Advantage: very sample efficient. Disadvantage: models are hard to learn accurately; errors compound.\n\n• Model-free: don't learn the model. Instead, learn V(s) or Q(s,a) directly from experience (samples of (s, a, r, s')). Advantage: doesn't require accurate environment model. Disadvantage: less sample efficient — need more interactions to learn.\n\nDeep RL for games and language models is almost always model-free.",
+      whyItMatters: "For language models, the 'environment' is the reward model (a separate neural network). We don't know its internal transition dynamics — so we have to be model-free, learning from sampled responses and reward scores rather than planning with a known model.",
+      diagram: `graph LR
+  classDef mb fill:#dbeafe,stroke:#60a5fa,color:#1e3a8a
+  classDef mf fill:#dcfce7,stroke:#4ade80,color:#14532d
+
+  MB["Model-based RL\n──────────────────\nLearn P(s'|s,a) and R(s,a)\nPlan using learned model\n✓ Very sample efficient\n✗ Model errors hurt performance\nUsed for: board games (AlphaZero),\nrobotics with good simulators"]
+  MF["Model-free RL\n──────────────────\nLearn Q(s,a) or V(s) from samples\nNo explicit model of world\n✓ No model errors\n✗ Needs lots of samples\nUsed for: Atari, robotics,\nLLM alignment (RLHF)"]
+
+  class MB mb
+  class MF mf`
+    },
+    {
+      title: "Step 6: Partially Observable MDPs (POMDPs)",
+      body: "Real environments are often not fully observable. In a Partially Observable MDP (POMDP), the agent doesn't directly see the full state s — it only sees an observation o that depends on s.\n\nExamples:\n• Poker: you see your cards and bets, not opponents' cards\n• Robotics: sensors measure noisy approximations of position\n• Language models: you see the conversation, but not the user's true intent\n\nApproaches:\n• Use the observation as if it were the state (works if observations are informative enough)\n• Stack recent observations to infer hidden state\n• Learn a belief state — a probability distribution over hidden states\n\nIn practice, most deep RL for games treats the problem as an MDP by stacking frames (for Atari) or using the full conversation history (for LLMs).",
+      whyItMatters: "Recognizing that your problem is a POMDP is important. If critical information isn't in the observation, the agent can't learn to act on it. For LLMs, this means: if the reward model can't measure what truly matters (e.g., long-term user satisfaction), the agent will optimize for observable proxies instead.",
+      diagram: `graph LR
+  classDef hidden fill:#fee2e2,stroke:#f87171,color:#7f1d1d
+  classDef obs fill:#dbeafe,stroke:#60a5fa,color:#1e3a8a
+  classDef agent fill:#6366f1,stroke:#4f46e5,color:#fff
+
+  HS["Hidden state s\n(true world state\nnot fully visible)"] --> OBS["Observation o\n(partial view of s)\nAgent only sees this"]
+  OBS --> AGENT["Agent\nMust infer hidden state\nfrom observation history"]
+  AGENT --> ACT["Action a"]
+  ACT --> HS
+
+  class HS hidden
+  class OBS obs
+  class AGENT agent`
+    },
+  ]}
+/>
+
+<ConceptCheck
+  question="A robot learns to navigate a maze. Its sensor tells it only whether there's a wall directly in front of it (yes/no). Is this a full MDP or a POMDP? What information is missing from the state, and how could you augment the observation to better approximate a Markov state?"
+  answer="This is a POMDP — the observation (wall ahead: yes/no) is far less than the full state (exact position + orientation in the maze). The robot can't determine its location from a single observation, so the future (whether it'll reach the exit) doesn't depend only on the current observation. To better approximate a Markov state: stack the last N observations (building a 'memory' of recent turns and wall detections) — this gives the agent enough history to triangulate its position. Alternatively, add more sensors (left wall, right wall, turn counter) to make the observation closer to the full state."
+/>
+
+## The MDP Framework in Practice
+
+<MermaidDiagram chart={`graph TD
+  classDef problem fill:#dbeafe,stroke:#60a5fa,color:#1e3a8a
+  classDef mdp fill:#6366f1,stroke:#4f46e5,color:#fff
+  classDef algo fill:#dcfce7,stroke:#4ade80,color:#14532d
+
+  CHESS["Chess game"] --> MDP1["S: board positions\nA: legal moves\nR: +1 win, -1 loss\nγ: 0.99\nP: deterministic"]
+  ATARI["Atari game"] --> MDP2["S: screen pixels (84×84)\nA: 18 buttons\nR: game score\nγ: 0.99\nP: game engine"]
+  LLM["LLM alignment"] --> MDP3["S: conversation so far\nA: next token (50k vocab)\nR: human preference score\nγ: 1.0 (single response)\nP: reward model"]
+
+  MDP1 & MDP2 & MDP3 --> ALGO["Same RL algorithms apply\n(Q-learning, PPO, etc.)"]
+
+  class CHESS,ATARI,LLM problem
+  class MDP1,MDP2,MDP3 mdp
+  class ALGO algo`}
+/>

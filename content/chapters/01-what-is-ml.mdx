@@ -1,0 +1,167 @@
+import AnalogyCard from '@/components/interactive/AnalogyCard';
+import StepWalkthrough from '@/components/interactive/StepWalkthrough';
+import MermaidDiagram from '@/components/interactive/MermaidDiagram';
+import ConceptCheck from '@/components/interactive/ConceptCheck';
+
+<AnalogyCard
+  title="Teaching by example, not by rules"
+  body="Imagine trying to teach a toddler what a 'dog' is. You could write a rulebook: four legs, fur, barks, tail... but that rulebook would fail for a three-legged dog, or a wolf. Instead, you just show the toddler hundreds of pictures: 'dog, dog, not a dog, dog...' After enough examples, they just get it. Machine learning works exactly the same way — instead of writing rules, we show a program thousands of examples and let it figure out the patterns by itself."
+/>
+
+## What is Machine Learning?
+
+Traditional programming is like giving someone a recipe: you write exact step-by-step instructions, and the computer follows them. If an ingredient is missing, the recipe breaks.
+
+**Machine learning flips this around.** Instead of writing the rules, you give the computer:
+1. A pile of examples (the **data**)
+2. A signal for what's right or wrong (the **label** or **reward**)
+
+The computer then figures out the rules on its own.
+
+<StepWalkthrough
+  steps={[
+    {
+      title: "Step 1: Collect examples",
+      body: "Every ML project starts with data — lots of it. If you want to build a spam detector, you need thousands of emails labeled 'spam' or 'not spam'. The examples are called the training set. The more varied and representative your examples, the better the model will learn.",
+      whyItMatters: "Garbage in, garbage out. The quality of your data determines the ceiling of what your model can learn. No algorithm can fix bad data.",
+      diagram: `graph LR
+  classDef example fill:#dbeafe,stroke:#60a5fa,color:#1e3a8a
+  classDef store fill:#6366f1,stroke:#4f46e5,color:#fff
+
+  E1(["📧 Win prize! → Spam"]) --> DS
+  E2(["📧 Team meeting → Not spam"]) --> DS
+  E3(["📧 Claim reward! → Spam"]) --> DS
+  DS[("📦 Training Dataset\nthousands of labeled examples")]
+
+  class E1,E2,E3 example
+  class DS store`
+    },
+    {
+      title: "Step 2: Choose a model",
+      body: "A model is a mathematical structure — think of it as a blank 'brain' that doesn't know anything yet. It has internal numbers called parameters (or weights) that start out random. During training, these numbers get adjusted until the model makes good predictions.",
+      whyItMatters: "Different models suit different problems. A simple model might be great for predicting house prices; a complex deep neural network is better for understanding language. You don't need to pick the most complex one — start simple.",
+      diagram: `graph LR
+  classDef store fill:#dbeafe,stroke:#60a5fa,color:#1e3a8a
+  classDef model fill:#6366f1,stroke:#4f46e5,color:#fff
+  classDef unknown fill:#f1f5f9,stroke:#94a3b8,color:#475569
+
+  DS[("📦 Dataset")] --> M["🧠 Model\nweights = random"]
+  M --> P["❓ Prediction\nnot meaningful yet"]
+
+  class DS store
+  class M model
+  class P unknown`
+    },
+    {
+      title: "Step 3: Train — feed data, measure error",
+      body: "Training means showing the model example after example. After each example, the model makes a prediction. We compare that prediction to the correct answer and calculate an error score (called the loss). A high loss means the model was very wrong; a loss near zero means it's nearly perfect.",
+      whyItMatters: "The loss is the feedback signal. Without measuring how wrong the model is, we have no way to improve it. It's like practicing darts in the dark — you can't get better if you don't know where you're hitting.",
+      diagram: `graph TD
+  classDef input fill:#dbeafe,stroke:#60a5fa,color:#1e3a8a
+  classDef model fill:#6366f1,stroke:#4f46e5,color:#fff
+  classDef truth fill:#dcfce7,stroke:#4ade80,color:#14532d
+  classDef loss fill:#fee2e2,stroke:#f87171,color:#7f1d1d
+
+  Email(["📧 Input email"]) --> M["Model"]
+  M --> Pred["Predicted: Not spam"]
+  Truth(["✅ Actual: Spam"]) --> Compare["Compare"]
+  Pred --> Compare
+  Compare --> L["Loss = 0.87\n🔴 Very wrong"]
+
+  class Email,Truth input
+  class M model
+  class Truth truth
+  class L loss`
+    },
+    {
+      title: "Step 4: Adjust the weights (learning)",
+      body: "Here's where the magic happens. After each prediction, the model uses the error signal to slightly adjust its internal weights in a direction that would have made the prediction better. This adjustment process is called gradient descent, and we'll explore it in detail in Chapter 3. For now, just know: each example makes the model a tiny bit smarter.",
+      whyItMatters: "This iterative adjustment is what 'learning' actually means in ML. The model isn't memorizing — it's gradually building an internal representation of the patterns in the data.",
+      diagram: `graph LR
+  classDef loss fill:#fee2e2,stroke:#f87171,color:#7f1d1d
+  classDef adjust fill:#fef3c7,stroke:#f59e0b,color:#78350f
+  classDef better fill:#dcfce7,stroke:#4ade80,color:#14532d
+
+  L["Loss signal\n🔴 was wrong"] --> A["Adjust weights\n← gradient descent →"]
+  A --> M["🧠 Model\nslightly improved"]
+  M --> P["Better prediction\nnext time ✓"]
+
+  class L loss
+  class A adjust
+  class M,P better`
+    },
+    {
+      title: "Step 5: Repeat thousands of times",
+      body: "The model sees the data over and over — each full pass through the dataset is called an epoch. With each epoch, the weights get a little better, the loss gets a little lower, and the predictions become more accurate. Training might run for tens or hundreds of epochs depending on the problem.",
+      whyItMatters: "ML models don't learn instantly. They need repetition, just like a human student who needs to practice a skill many times before it becomes natural.",
+      diagram: `graph LR
+  classDef high fill:#fee2e2,stroke:#f87171,color:#7f1d1d
+  classDef mid fill:#fef3c7,stroke:#f59e0b,color:#78350f
+  classDef low fill:#dcfce7,stroke:#4ade80,color:#14532d
+
+  E1["Epoch 1\nLoss: 0.92 🔴"] --> E2["Epoch 3\nLoss: 0.61 🟡"]
+  E2 --> E3["Epoch 10\nLoss: 0.28 🟡"]
+  E3 --> E4["Epoch 30\nLoss: 0.08 🟢"]
+
+  class E1 high
+  class E2,E3 mid
+  class E4 low`
+    },
+    {
+      title: "Step 6: Evaluate on new data",
+      body: "Once training is done, we test the model on data it has never seen before — the test set. This tells us whether the model truly learned the patterns or just memorized the training examples. A model that does well on training data but poorly on new data has 'overfit' (we'll cover this in Chapter 5).",
+      whyItMatters: "Real-world performance is what counts. Your model will always encounter new, unseen examples in production. The test set is your honest preview of how well it will actually perform.",
+      diagram: `graph TD
+  classDef seen fill:#ede9fe,stroke:#8b5cf6,color:#4c1d95
+  classDef unseen fill:#dbeafe,stroke:#60a5fa,color:#1e3a8a
+  classDef model fill:#6366f1,stroke:#4f46e5,color:#fff
+  classDef result fill:#dcfce7,stroke:#4ade80,color:#14532d
+
+  TD[("Training data\n✓ model has seen this")] --> TM["Trained Model"]
+  TE[("Test data\n🆕 never seen before")] --> TM
+  TM --> R["Accuracy: 94% ✓\nReady for production"]
+
+  class TD seen
+  class TE unseen
+  class TM model
+  class R result`
+    },
+  ]}
+/>
+
+## The Three Types of Machine Learning
+
+Not all ML problems look the same. There are three main flavours:
+
+<MermaidDiagram chart={`graph TD
+  classDef root fill:#6366f1,stroke:#4f46e5,color:#fff
+  classDef sup fill:#dbeafe,stroke:#3b82f6,color:#1e3a8a
+  classDef unsup fill:#fef9c3,stroke:#ca8a04,color:#713f12
+  classDef rl fill:#dcfce7,stroke:#16a34a,color:#14532d
+
+  ML(["🤖 Machine Learning"])
+  ML --> SL["📋 Supervised Learning\nLearn from labeled examples\n─────────────────────\nspam detector · image classifier"]
+  ML --> UL["🔍 Unsupervised Learning\nFind hidden structure\n─────────────────────\ncustomer clustering · anomaly detection"]
+  ML --> RL["🎮 Reinforcement Learning\nLearn by trial and reward\n─────────────────────\ngame agents · robotics · RLHF"]
+
+  class ML root
+  class SL sup
+  class UL unsup
+  class RL rl`}
+/>
+
+This course focuses on **supervised learning** (for fine-tuning) and **reinforcement learning** — you'll understand both deeply by the end.
+
+<ConceptCheck
+  question="A company wants to build a system that detects fraudulent credit card transactions. They have millions of past transactions labeled as 'fraud' or 'not fraud'. What type of machine learning is this?"
+  answer="Supervised learning — because each example has a clear label ('fraud' / 'not fraud') that the model can learn from. The model will learn to spot the patterns that distinguish fraudulent transactions from legitimate ones."
+/>
+
+## Why ML Instead of Traditional Programming?
+
+Some problems are too complex to write rules for. Consider:
+- **Speech recognition**: Every person speaks differently. There's no rulebook that maps every possible sound to every possible word.
+- **Image classification**: What makes a photo a 'cat'? The rules would be impossibly complex.
+- **Language understanding**: Human language is ambiguous, contextual, and constantly evolving.
+
+For these problems, showing examples and letting the model find the patterns is the only practical approach.

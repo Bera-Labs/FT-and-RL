@@ -1,0 +1,234 @@
+import AnalogyCard from '@/components/interactive/AnalogyCard';
+import StepWalkthrough from '@/components/interactive/StepWalkthrough';
+import MermaidDiagram from '@/components/interactive/MermaidDiagram';
+import ConceptCheck from '@/components/interactive/ConceptCheck';
+
+<AnalogyCard
+  title="A spotlight that decides which words to focus on"
+  body="When you read the sentence 'The animal didn't cross the street because it was too tired', your brain immediately knows that 'it' refers to 'animal', not 'street'. You're not reading word by word in isolation — you're attending to certain words when processing others. The Transformer architecture gives neural networks this same ability: for every word it processes, it looks back at all the other words and decides which ones are most relevant right now. This attending mechanism is called self-attention, and it's what makes Transformers so much more powerful than the older sequence models that came before."
+/>
+
+## Why Did We Need a New Architecture?
+
+Before Transformers (2017), language models used Recurrent Neural Networks (RNNs). RNNs processed text word by word in order, passing a 'hidden state' forward. This had two major problems:
+
+<MermaidDiagram chart={`graph LR
+  classDef rnn fill:#fee2e2,stroke:#f87171,color:#7f1d1d
+  classDef trans fill:#dcfce7,stroke:#4ade80,color:#14532d
+
+  R["RNN Problems\n──────────────────\n✗ Sequential — can't parallelize\n✗ Long-range dependencies fade\n  (word 1 barely affects word 200)\n✗ Slow to train"]
+  T["Transformer Solutions\n──────────────────\n✓ Parallel — all words at once\n✓ Direct connections — any word\n  can attend to any other word\n✓ Fast to train"]
+
+  class R rnn
+  class T trans`}
+/>
+
+<StepWalkthrough
+  steps={[
+    {
+      title: "Step 1: Tokenization — converting text to numbers",
+      body: "Before any neural network can process text, the text must become numbers. Tokenization splits text into tokens — roughly word-like pieces — and assigns each one an integer ID.\n\n'Hello world' might become [15496, 995]\n\nModern tokenizers (like BPE — Byte-Pair Encoding) split rare words into sub-word pieces, so the vocabulary stays manageable (~50,000 tokens) while still handling any word. Common words get a single token; rare words become 2–4 pieces.",
+      whyItMatters: "The tokenizer defines the 'alphabet' the model thinks in. Subword tokenization is a key reason why large language models can handle misspellings, new words, and multiple languages without a vocabulary explosion.",
+      diagram: `graph LR
+  classDef inp fill:#dbeafe,stroke:#60a5fa,color:#1e3a8a
+  classDef tok fill:#ede9fe,stroke:#8b5cf6,color:#4c1d95
+  classDef ids fill:#6366f1,stroke:#4f46e5,color:#fff
+
+  T(["'The cat sat'"]) --> TOK["Tokenizer\n(BPE)"]
+  TOK --> IDS["[464, 3797, 3332]"]
+  IDS --> EMB["Token embeddings\nvectors of size 768"]
+
+  class T inp
+  class TOK tok
+  class IDS,EMB ids`
+    },
+    {
+      title: "Step 2: Token embeddings — giving each token meaning",
+      body: "Each token ID is mapped to a vector — a list of ~768 (or 4096) numbers called an embedding. These embeddings start random but get learned during training. By the end of pre-training, similar words have similar embeddings.\n\nAdditionally, a positional encoding is added to each embedding — a signal that tells the model 'this token is in position 1, 2, 3...'. Without it, the model has no idea about word order, since attention looks at all positions simultaneously.",
+      whyItMatters: "Embeddings are where word meaning lives. The famous example: king − man + woman ≈ queen. Positional encoding is essential because attention, unlike RNNs, has no inherent notion of 'earlier' vs 'later'.",
+      diagram: `graph TD
+  classDef ids fill:#dbeafe,stroke:#60a5fa,color:#1e3a8a
+  classDef emb fill:#ede9fe,stroke:#8b5cf6,color:#4c1d95
+  classDef pos fill:#fef3c7,stroke:#f59e0b,color:#78350f
+  classDef sum fill:#6366f1,stroke:#4f46e5,color:#fff
+
+  ID1["token 464 'The'"] --> E1["embedding\n[0.3, -0.1, 0.8, ...]"]
+  ID2["token 3797 'cat'"] --> E2["embedding\n[-0.2, 0.9, 0.1, ...]"]
+  P1["pos 0"] --> PE1["positional enc\n[0.0, 1.0, 0.0, ...]"]
+  P2["pos 1"] --> PE2["positional enc\n[0.8, 0.5, 0.1, ...]"]
+  E1 --> S1["token + pos vector\nfinal input to transformer"]
+  PE1 --> S1
+  E2 --> S2["token + pos vector\nfinal input to transformer"]
+  PE2 --> S2
+
+  class ID1,ID2 ids
+  class E1,E2 emb
+  class P1,P2,PE1,PE2 pos
+  class S1,S2 sum`
+    },
+    {
+      title: "Step 3: Self-attention — which words matter for this word?",
+      body: "Self-attention is the heart of the Transformer. For every token, it asks: 'looking at all other tokens in this sequence, which ones are most relevant to understanding this token?'\n\nIt does this by computing three vectors from each token embedding:\n• Query (Q): 'what am I looking for?'\n• Key (K): 'what information do I contain?'\n• Value (V): 'what information will I pass on?'\n\nAttention score between tokens i and j = softmax(Qᵢ · Kⱼ / √d)\nThe output is a weighted sum of Values — more weight on relevant tokens.",
+      whyItMatters: "Self-attention allows every token to directly 'see' every other token, regardless of distance. This is why Transformers handle long-range dependencies that RNNs struggled with — 'it' in sentence position 50 can directly attend to 'animal' at position 5.",
+      diagram: `graph TD
+  classDef inp fill:#dbeafe,stroke:#60a5fa,color:#1e3a8a
+  classDef qkv fill:#ede9fe,stroke:#8b5cf6,color:#4c1d95
+  classDef score fill:#fef3c7,stroke:#f59e0b,color:#78350f
+  classDef out fill:#dcfce7,stroke:#4ade80,color:#14532d
+
+  E["Token embedding\n'it' at position 9"] --> Q["Query Q\n'what should I attend to?'"]
+  E["Token embedding\n'it' at position 9"] --> K["Key K\n'how do I identify myself?'"]
+  E["Token embedding\n'it' at position 9"] --> V["Value V\n'what info will I share?'"]
+  Q --> SC["Attention scores\nQ·K / √d for each other token\nsoft: 'animal'=0.72 · 'street'=0.08"]
+  SC --> OUT["Weighted sum of Values\n= rich representation of 'it'\naware it means 'animal'"]
+
+  class E inp
+  class Q,K,V qkv
+  class SC score
+  class OUT out`
+    },
+    {
+      title: "Step 4: Multi-head attention — looking from multiple angles",
+      body: "One set of Q/K/V matrices is called a single attention head. But a word can be relevant to another word in multiple ways simultaneously: grammatically, semantically, positionally, by reference...\n\nMulti-head attention runs 8 (or 12, 16...) attention heads in parallel, each with its own Q/K/V matrices. Each head learns to focus on a different type of relationship. The outputs from all heads are concatenated and projected back to the model's size.\n\nIn a 12-layer model with 12 heads, that's 144 independent attention mechanisms learning 144 different relationship types.",
+      whyItMatters: "Different heads capture different linguistic phenomena. In GPT-2, researchers found heads that specifically track subject-verb agreement, coreference resolution, positional relationships, and more — each emerging from training with no explicit supervision.",
+      diagram: `graph LR
+  classDef head fill:#ede9fe,stroke:#8b5cf6,color:#4c1d95
+  classDef inp fill:#dbeafe,stroke:#60a5fa,color:#1e3a8a
+  classDef out fill:#6366f1,stroke:#4f46e5,color:#fff
+
+  X(["Input embeddings"]) --> H1["Head 1\ngrammar relations"]
+  X --> H2["Head 2\ncoreference"]
+  X --> H3["Head 3\nlong-range context"]
+  X --> HN["Head 12\n..."]
+  H1 & H2 & H3 & HN --> C["Concatenate\nall heads' outputs"]
+  C --> P["Linear projection\n→ back to model size"]
+
+  class X inp
+  class H1,H2,H3,HN head
+  class C,P out`
+    },
+    {
+      title: "Step 5: The feed-forward layer",
+      body: "After the multi-head attention, each token passes through a Feed-Forward Network (FFN) — two linear layers with a ReLU (or GeLU) activation in between.\n\nFFN(x) = max(0, xW₁ + b₁)W₂ + b₂\n\nThis FFN is applied independently to each token position — the same weights for every position, but each token processed separately. The hidden dimension of the FFN is typically 4× the model's embedding size (so 3072 for a 768-dim model).\n\nResearch suggests that the FFN layers act as a 'key-value memory' — storing factual knowledge that attention patterns then retrieve.",
+      whyItMatters: "Attention determines which words to combine. The FFN determines what to do with that combined information. They're complementary: attention routes information, FFN transforms it.",
+      diagram: `graph LR
+  classDef attn fill:#ede9fe,stroke:#8b5cf6,color:#4c1d95
+  classDef ffn fill:#6366f1,stroke:#4f46e5,color:#fff
+  classDef norm fill:#fef3c7,stroke:#f59e0b,color:#78350f
+  classDef out fill:#dcfce7,stroke:#4ade80,color:#14532d
+
+  ATT["Multi-head attention\noutput"] --> N1["Layer Norm\n+ residual"]
+  N1 --> FF1["Linear: 768 → 3072\n+ GeLU activation"]
+  FF1 --> FF2["Linear: 3072 → 768"]
+  FF2 --> N2["Layer Norm\n+ residual"]
+  N2 --> OUT["Token representation\nricher than before"]
+
+  class ATT attn
+  class N1,N2 norm
+  class FF1,FF2 ffn
+  class OUT out`
+    },
+    {
+      title: "Step 6: Stacking layers — depth = understanding",
+      body: "One attention + FFN block is called a Transformer layer. These layers are stacked N times (12 for BERT-base, 96 for GPT-4 estimated). Each layer refines the token representations, making them progressively more abstract.\n\nEarly layers: syntactic patterns (part of speech, phrase structure)\nMiddle layers: semantic relationships (who does what to whom)\nLate layers: task-specific representations (the actual prediction)\n\nThe same input sentence, after 96 layers of processing, has been transformed into deeply contextual representations that encode the full meaning of every word in relation to every other.",
+      whyItMatters: "Depth is what makes large language models qualitatively different from shallow ones — not just quantitatively better. Complex reasoning and world knowledge emerge from the interaction of many layers, not from any single one.",
+      diagram: `graph TD
+  classDef inp fill:#dbeafe,stroke:#60a5fa,color:#1e3a8a
+  classDef early fill:#ede9fe,stroke:#8b5cf6,color:#4c1d95
+  classDef mid fill:#c4b5fd,stroke:#7c3aed,color:#3b0764
+  classDef late fill:#7c3aed,stroke:#5b21b6,color:#fff
+  classDef out fill:#dcfce7,stroke:#4ade80,color:#14532d
+
+  I(["Token embeddings\n(raw vectors)"]) --> L1["Layers 1–3\nSyntax: POS, phrase boundaries"]
+  L1 --> L2["Layers 4–8\nSemantics: subject/object/reference"]
+  L2 --> L3["Layers 9–12\nTask: prediction-ready representations"]
+  L3 --> O["Output\nDeep contextual token vectors"]
+
+  class I inp
+  class L1 early
+  class L2 mid
+  class L3 late
+  class O out`
+    },
+    {
+      title: "Step 7: The output head — producing predictions",
+      body: "The final layer's token representations are passed through an output head — a linear projection that maps each vector to a score over the vocabulary (50,000+ words). Softmax converts these scores to probabilities.\n\nFor language modeling: the highest-probability token is the predicted next word. During training, we compare this distribution to the actual next word and compute cross-entropy loss.\n\nFor fine-tuning classification tasks: we might only use the representation of the first token (the [CLS] token in BERT) or pool over all tokens, then pass it through a small classifier head.",
+      whyItMatters: "The output head is replaceable — this is what makes fine-tuning possible. The Transformer layers remain the same; you swap out or add the output head for your task. The frozen or lightly-tuned body provides rich representations; your new head learns the task-specific mapping.",
+      diagram: `graph LR
+  classDef rep fill:#ede9fe,stroke:#8b5cf6,color:#4c1d95
+  classDef head fill:#6366f1,stroke:#4f46e5,color:#fff
+  classDef out fill:#dcfce7,stroke:#4ade80,color:#14532d
+  classDef alt fill:#fef3c7,stroke:#f59e0b,color:#78350f
+
+  R["Final token representations\n(from last Transformer layer)"] --> LM["Language model head\nlinear → 50k vocab → softmax\n→ P('next word' = each token)"]
+  R --> CLS["Classification head\npool → linear → softmax\n→ P(positive / negative / neutral)"]
+
+  LM --> O1["'The next word is probably: sat'\n0.42 probability"]
+  CLS --> O2["Sentiment: positive 0.87\nnegative 0.09\nneutral 0.04"]
+
+  class R rep
+  class LM,CLS head
+  class O1,O2 out`
+    },
+    {
+      title: "Step 8: Flash Attention — making O(n²) practical",
+      body: "Standard self-attention computes a full N×N matrix of attention scores where N is the sequence length. For a 4,096-token context, that's 16 million pairs per layer — memory grows quadratically. At 128k tokens, storing this matrix in GPU memory is simply impossible.\n\nFlash Attention (Dao et al., 2022) doesn't reduce the computation — it changes how it's executed. Instead of writing the full N×N matrix to slow HBM (GPU main memory), it tiles the computation into blocks that fit in fast SRAM (on-chip cache). The result: identical mathematical output, but 2–4× faster and 5–20× less memory.\n\nThis is why modern models can handle long context windows without running out of memory. Enabling it is one of the highest-ROI optimizations for fine-tuning:\n• HuggingFace: `attn_implementation='flash_attention_2'`\n• Install: `pip install flash-attn`",
+      whyItMatters: "Flash Attention doesn't trade quality for speed — it produces bit-identical results to standard attention. The gain is purely from smarter memory access. Understanding this distinction matters because it means you can always enable Flash Attention without worrying about changing model behavior.",
+      diagram: `graph LR
+  classDef slow fill:#fee2e2,stroke:#f87171,color:#7f1d1d
+  classDef fast fill:#dcfce7,stroke:#4ade80,color:#14532d
+  classDef same fill:#fef3c7,stroke:#f59e0b,color:#78350f
+
+  STD["Standard Attention\nWrite full N×N matrix to HBM\n(slow GPU main memory)\nO(N²) memory · slow I/O\n128k tokens → out of memory"]
+  FA["Flash Attention\nTile into SRAM blocks (on-chip cache)\nNever store full N×N matrix\n2–4× faster · 5–20× less memory\n128k tokens → fits easily"]
+  SAME["Identical output ✓\nSame math, smarter memory access"]
+
+  STD --> SAME
+  FA --> SAME
+
+  class STD slow
+  class FA fast
+  class SAME same`
+    },
+  ]}
+/>
+
+## The Full Transformer in One Diagram
+
+<MermaidDiagram chart={`graph TD
+  classDef inp fill:#dbeafe,stroke:#60a5fa,color:#1e3a8a
+  classDef enc fill:#ede9fe,stroke:#8b5cf6,color:#4c1d95
+  classDef deep fill:#7c3aed,stroke:#5b21b6,color:#fff
+  classDef out fill:#dcfce7,stroke:#16a34a,color:#14532d
+
+  T(["Input text: 'The cat sat'"]) --> TOK["Tokenize → [464, 3797, 3332]"]
+  TOK --> EMB["Token embeddings + positional encodings"]
+  EMB --> L1["Transformer Layer 1\n(self-attention + FFN + layer norm)"]
+  L1 --> L2["Transformer Layer 2"]
+  L2 --> LD["··· × N layers ···"]
+  LD --> LN["Transformer Layer N"]
+  LN --> HEAD["Output head\n(language model or classifier)"]
+  HEAD --> OUT["Prediction"]
+
+  class T inp
+  class TOK,EMB inp
+  class L1,L2 enc
+  class LD,LN deep
+  class HEAD,OUT out`}
+/>
+
+<ConceptCheck
+  question="In self-attention, why do we divide the dot product (Q·K) by the square root of the dimension d before applying softmax?"
+  answer="To prevent the dot products from becoming very large when d (the vector dimension) is large. Large dot products push the softmax into regions where it becomes extremely 'peaked' — essentially a hard argmax rather than a soft distribution. This kills gradients and makes training unstable. Dividing by √d keeps the variance of the dot products constant regardless of dimension size, which makes softmax behave as a proper soft weighting."
+/>
+
+## Why This Architecture Dominates
+
+Transformers took over not just language, but vision (ViT), audio (Whisper), protein structure (AlphaFold), and code (Codex). The reason is the architecture's combination of properties:
+
+- **Parallelizable**: all tokens computed simultaneously → uses GPUs efficiently
+- **Expressive**: any token can attend to any other → captures long-range structure
+- **Scalable**: performance improves predictably with size and data → scaling laws hold
+- **Transferable**: pre-trained representations work across tasks → foundation for fine-tuning
+
+The Transformer is the engine under every large language model you'll use in Parts 2 and 3 of this course.

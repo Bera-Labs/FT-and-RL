@@ -1,0 +1,159 @@
+import AnalogyCard from '@/components/interactive/AnalogyCard';
+import StepWalkthrough from '@/components/interactive/StepWalkthrough';
+import MermaidDiagram from '@/components/interactive/MermaidDiagram';
+import ConceptCheck from '@/components/interactive/ConceptCheck';
+
+<AnalogyCard
+  title="Why your model is memorizing not learning"
+  body="You teach a child to solve math problems by giving them 50 practice problems and their answers. But instead of learning the method, the child memorizes the exact 50 answers. When you give them problem 51, they're lost — because they never learned the underlying rules, just the specific examples. Fine-tuned models do exactly this when they overfit, when training data is low quality, or when the task is under-specified. The frustrating part: the training metrics look great, the loss is low, everything seems fine — until you test on real examples and the model fails. This chapter is about recognizing and fixing the most common fine-tuning failure modes before they bite you."
+/>
+
+## The Most Common Fine-Tuning Failures
+
+Most fine-tuning problems fall into six categories. Knowing the pattern lets you diagnose and fix faster.
+
+<MermaidDiagram chart={`graph TD
+  classDef fail fill:#fee2e2,stroke:#f87171,color:#7f1d1d
+  classDef symptom fill:#fef3c7,stroke:#f59e0b,color:#78350f
+  classDef fix fill:#dcfce7,stroke:#4ade80,color:#14532d
+
+  FAILS["Common Failures"] --> O["Overfitting\n(memorizing training data)"]
+  FAILS --> CF["Catastrophic forgetting\n(losing general ability)"]
+  FAILS --> NS["No signal\n(model barely changes)"]
+  FAILS --> NOISE["Noisy data\n(model learns wrong patterns)"]
+  FAILS --> FMT["Format drift\n(outputs have wrong structure)"]
+  FAILS --> REP["Repetition\n(model loops and repeats)"]
+
+  class O,CF,NS,NOISE,FMT,REP fail`}
+/>
+
+<StepWalkthrough
+  steps={[
+    {
+      title: "Problem 1: Overfitting — 'it was perfect on training data'",
+      body: "Symptoms:\n• Training loss drops to near zero; validation loss stays high or rises\n• Model generates training examples verbatim when given similar prompts\n• Works perfectly on examples it trained on; fails on slightly different phrasings\n\nRoot causes:\n• Too many epochs on a small dataset\n• Learning rate too high\n• Dataset has too many duplicate/near-duplicate examples\n\nFixes:\n• Reduce epochs (1–2 epochs is often enough)\n• Add early stopping (stop when val loss rises)\n• Deduplicate your dataset\n• Reduce learning rate\n• Add dropout (0.05–0.1) for small datasets",
+      whyItMatters: "Overfitting is the number-one fine-tuning failure mode. It's especially sneaky because everything looks good during training. The only way to catch it is a validation set monitored throughout training — never skip this.",
+      diagram: `graph LR
+  classDef bad fill:#fee2e2,stroke:#f87171,color:#7f1d1d
+  classDef fix fill:#dcfce7,stroke:#4ade80,color:#14532d
+  classDef warn fill:#fef3c7,stroke:#f59e0b,color:#78350f
+
+  SYMPTOM["Train loss: 0.1 ↓\nVal loss: 2.8 ↑\n→ Strong overfitting signal"] --> DIAG["Diagnosis:\nmodel memorized\ntraining set"]
+  DIAG --> FIX1["Fix 1: Reduce epochs\n(try epoch 1 checkpoint)"]
+  DIAG --> FIX2["Fix 2: Deduplicate dataset\n(remove near-dupes)"]
+  DIAG --> FIX3["Fix 3: Lower lr by 2–5×"]
+
+  class SYMPTOM bad
+  class FIX1,FIX2,FIX3 fix
+  class DIAG warn`
+    },
+    {
+      title: "Problem 2: Catastrophic forgetting — 'it became dumber'",
+      body: "Symptoms:\n• Model excels at your specific task but loses basic competence (grammar, coherence, factual recall)\n• General benchmarks score much lower than the base model\n• Outputs are on-topic but oddly phrased, repetitive, or factually wrong on unrelated questions\n\nRoot causes:\n• Learning rate too high — overwrites too much pre-trained knowledge\n• Too many epochs — keeps drifting away from pre-trained distribution\n• Training data doesn't cover the full range of tasks you need\n\nFixes:\n• Lower learning rate (try 5×–10× smaller)\n• Reduce epochs\n• Mix in general instruction-following data with your task data (5–10%)\n• Use LoRA instead of full fine-tuning — frozen base preserves general ability",
+      whyItMatters: "Catastrophic forgetting is why LoRA is often preferred over full fine-tuning. When only the LoRA matrices change, the base model's general capabilities are structurally preserved — there's nothing to forget because those weights are frozen.",
+      diagram: `graph LR
+  classDef bad fill:#fee2e2,stroke:#f87171,color:#7f1d1d
+  classDef fix fill:#dcfce7,stroke:#4ade80,color:#14532d
+
+  S["Symptoms:\n• Task accuracy: 92% ✓\n• General Q&A: 43% ↓ (was 71%)\n• Grammar errors appearing\n• Incoherent on off-topic prompts"] --> D["Root cause:\nHigh lr + many epochs\noverwrote general knowledge"]
+  D --> F["Fixes:\n• Lower lr to 1e-5\n• Switch to LoRA\n• Mix in 10% general data\n• Reduce to 1–2 epochs"]
+
+  class S bad
+  class F fix`
+    },
+    {
+      title: "Problem 3: No signal — 'nothing changed'",
+      body: "Symptoms:\n• Training loss barely decreases after many steps\n• Validation loss stays approximately where it started\n• Model outputs are identical (or nearly identical) to the base model\n\nRoot causes:\n• Learning rate too low — updates are negligibly small\n• Batch size too large for the dataset (only a few gradient steps per epoch)\n• Incorrect loss mask — loss is being computed on instruction tokens instead of response tokens (model is trying to learn the wrong thing)\n• Wrong chat template — examples aren't formatted in a way the model recognizes\n\nFixes:\n• Increase learning rate by 5×–10×\n• Check the loss mask is correctly targeting response tokens only\n• Print a few tokenized examples and verify the format matches the model's expected template",
+      whyItMatters: "Loss mask errors are silent — the training loop runs fine, the loss decreases, but the model is learning to predict the instruction text rather than the response. Always print 1–2 tokenized examples and inspect them before starting a long training run.",
+      diagram: `graph LR
+  classDef bad fill:#fee2e2,stroke:#f87171,color:#7f1d1d
+  classDef check fill:#fef3c7,stroke:#f59e0b,color:#78350f
+  classDef fix fill:#dcfce7,stroke:#4ade80,color:#14532d
+
+  S["Training loss: 1.82 → 1.79\n(barely moved after 500 steps)"] --> D1["Check: learning rate\n(try 5× higher)"]
+  S --> D2["Check: loss mask\n(print tokenized example\nverify labels are -100 for instruction)"]
+  S --> D3["Check: chat template\n(does tokenized input match\nmodel's expected format?)"]
+
+  class S bad
+  class D1,D2,D3 fix`
+    },
+    {
+      title: "Problem 4: Noisy training data — 'the model learned the wrong thing'",
+      body: "Symptoms:\n• Model produces outputs in the wrong format\n• Model uses phrases or styles from poor-quality examples\n• Model sometimes gives correct responses and sometimes nonsense — inconsistently\n• Model reproduces specific errors that were in the training data\n\nRoot causes:\n• Training data has inconsistent output formats\n• Some examples have incorrect labels or wrong answers\n• Mixing high-quality and low-quality sources without filtering\n• Examples from a different task sneaked into the dataset\n\nFixes:\n• Sample 50–100 examples manually and look for problems\n• Standardize the output format across ALL examples\n• Use a quality filter (LLM-as-judge on training data) to remove bad examples\n• Separate sources and fine-tune on each separately to identify which is causing the problem",
+      whyItMatters: "Neural networks don't ignore bad examples — they learn from everything equally. 5% corrupt examples have a measurable negative effect. 20% corrupt examples can make the model actively worse than the base model.",
+      diagram: `graph TD
+  classDef bad fill:#fee2e2,stroke:#f87171,color:#7f1d1d
+  classDef good fill:#dcfce7,stroke:#4ade80,color:#14532d
+  classDef mix fill:#fef3c7,stroke:#f59e0b,color:#78350f
+
+  DATA["1,000 training examples\n──────────────────────\n800 good examples ✓\n120 inconsistent format ⚠️\n60 wrong answers ❌\n20 wrong task ❌"] --> MODEL["Model learns:\n✓ the correct responses\n⚠️ the inconsistent formatting\n❌ some wrong answers\n❌ some off-topic behavior"]
+  MODEL --> OUTPUT["Unpredictable outputs\nSometimes correct\nSometimes formatted wrong\nSometimes wrong answer"]
+
+  class DATA mix
+  class OUTPUT bad`
+    },
+    {
+      title: "Problem 5: Format drift — 'the output structure is wrong'",
+      body: "Symptoms:\n• Model consistently produces the right content but in the wrong format\n• JSON outputs have syntax errors\n• Bullet points that should be numbered, or vice versa\n• Missing required fields in structured outputs\n• Outputs truncated or run-on beyond the expected length\n\nRoot causes:\n• Training examples have inconsistent output formats\n• Some examples truncated due to max_length setting during preprocessing\n• The response template in the training data doesn't match the prompt template you use at inference\n\nFixes:\n• Ensure 100% format consistency in training data\n• Check that preprocessing doesn't silently truncate expected outputs\n• Verify inference prompt matches training prompt template exactly\n• For JSON output: use a JSON schema validator to filter training examples",
+      whyItMatters: "Format consistency is especially important for structured outputs like JSON or code. A model that produces almost-correct JSON is useless in production — the downstream system that parses it will crash on every output.",
+      diagram: `graph LR
+  classDef good fill:#dcfce7,stroke:#4ade80,color:#14532d
+  classDef bad fill:#fee2e2,stroke:#f87171,color:#7f1d1d
+  classDef fix fill:#ede9fe,stroke:#8b5cf6,color:#4c1d95
+
+  WANT["Expected output:\n{\"sentiment\": \"positive\",\n\"confidence\": 0.92}"] --> GOOD["Correct ✅"]
+  GOT1["{sentiment: positive,\nconfidence: 0.92}"] --> BAD1["Missing quotes — JSON parse fails ❌"]
+  GOT2["{\"sentiment\": \"positive\"}"] --> BAD2["Missing field — downstream crash ❌"]
+  FIX["Fix: use JSON validator\non all training examples\nremove malformed ones"] --> GOOD
+
+  class WANT,GOOD good
+  class GOT1,GOT2,BAD1,BAD2 bad
+  class FIX fix`
+    },
+    {
+      title: "Problem 6: Repetition and degeneration",
+      body: "Symptoms:\n• Model outputs repeat the same phrase or sentence over and over\n• Model generates very long outputs that circle back to the same content\n• Output starts coherent then devolves into nonsense or repetition\n\nRoot causes:\n• Learning rate too high (destabilized the model's generation distribution)\n• Very long training (model has overfit and produces degenerate outputs)\n• Missing or incorrect EOS (end-of-sequence) token — model doesn't know when to stop\n\nFixes:\n• At inference: set repetition_penalty=1.1–1.3 (penalizes already-generated tokens)\n• Check EOS token handling in training data\n• Reduce learning rate / epochs\n• For generation: use top-p=0.9 or top-k=50 sampling (adds diversity)\n• Add a max_new_tokens limit at inference to prevent runaway generation",
+      whyItMatters: "Repetition is often the first sign that a model is breaking down. It means the model has lost its internal 'sense of when to stop' — the token probabilities are dominated by whatever was just generated. Catching this early saves you from deploying a broken model.",
+      diagram: `graph LR
+  classDef input fill:#dbeafe,stroke:#60a5fa,color:#1e3a8a
+  classDef bad fill:#fee2e2,stroke:#f87171,color:#7f1d1d
+  classDef fix fill:#dcfce7,stroke:#4ade80,color:#14532d
+
+  P(["Prompt:\n'Summarize this article'"]) --> OUT["Model output:\nThe article discusses the market.\nThe market is important. The market\nis very important. The market is\nvery very important. The market..."]
+  OUT --> DIAG["Diagnosis:\nRepetition penalty too low\nor EOS token missing"]
+  DIAG --> FIX["Fix at inference:\nrepetition_penalty=1.2\nmax_new_tokens=200"]
+
+  class P input
+  class OUT bad
+  class FIX fix`
+    },
+  ]}
+/>
+
+<ConceptCheck
+  question="Your fine-tuned model produces JSON outputs like this: {name: 'John', age: 30} instead of the expected {&quot;name&quot;: &quot;John&quot;, &quot;age&quot;: 30} (missing quotes around keys). Training loss is low and the content is correct. What's the most likely cause and fix?"
+  answer="This is a format drift issue caused by inconsistent training data — some examples in your training set likely had JSON without quoted keys (technically invalid JSON but parseable in JavaScript). The model learned from those examples too. Fix: audit your training data with a strict JSON validator, remove all examples with non-standard JSON formatting, and re-train. Also verify that your preprocessing step didn't silently modify the JSON format of training examples (e.g., some serializers omit quotes around keys that look like valid identifiers)."
+/>
+
+## Quick Diagnosis Guide
+
+<MermaidDiagram chart={`graph TD
+  classDef q fill:#fef3c7,stroke:#f59e0b,color:#78350f
+  classDef a fill:#dcfce7,stroke:#4ade80,color:#14532d
+  classDef bad fill:#fee2e2,stroke:#f87171,color:#7f1d1d
+
+  Q1{"Val loss much\nhigher than train loss?"} --"Yes"--> OVERFIT["Overfitting\n→ fewer epochs, deduplicate data"]
+  Q1 --"No"--> Q2{"General capability\ndegraded?"}
+  Q2 --"Yes"--> FORGET["Catastrophic forgetting\n→ lower lr, use LoRA, mix general data"]
+  Q2 --"No"--> Q3{"Train loss\nbarely moves?"}
+  Q3 --"Yes"--> NOSIG["No signal\n→ higher lr, check loss mask & template"]
+  Q3 --"No"--> Q4{"Output format\nwrong?"}
+  Q4 --"Yes"--> FMT["Format drift\n→ audit training data format"]
+  Q4 --"No"--> Q5{"Model repeats\nitself?"}
+  Q5 --"Yes"--> REP["Repetition\n→ repetition_penalty, check EOS token"]
+  Q5 --"No"--> OK["✅ Looks healthy\ncheck for data quality issues"]
+
+  class Q1,Q2,Q3,Q4,Q5 q
+  class OVERFIT,FORGET,NOSIG,FMT,REP bad
+  class OK a`}
+/>

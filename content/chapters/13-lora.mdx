@@ -1,0 +1,166 @@
+import AnalogyCard from '@/components/interactive/AnalogyCard';
+import StepWalkthrough from '@/components/interactive/StepWalkthrough';
+import MermaidDiagram from '@/components/interactive/MermaidDiagram';
+import ConceptCheck from '@/components/interactive/ConceptCheck';
+import ParameterSlider from '@/components/interactive/ParameterSlider';
+
+<AnalogyCard
+  title="Sticky notes layered onto a textbook"
+  body="Imagine a comprehensive textbook — thousands of pages, all the knowledge you need. You can't rewrite it; it belongs to a library. But you can stick sticky notes on every page with your own annotations, corrections, and task-specific additions. The textbook (the pre-trained weights) stays unchanged. Your sticky notes (the LoRA matrices) layer on top and redirect the model's behavior toward your task. When you're done, you can peel off the notes, attach a different set for a different task, or permanently fuse them into the pages for a clean final copy. This is exactly how LoRA works."
+/>
+
+## The Core Idea
+
+LoRA (Low-Rank Adaptation, Hu et al., 2021) rests on one observation: when you fine-tune a model on a specific task, the changes to the weight matrices have **low intrinsic rank**. This means the update ΔW doesn't need all its dimensions — it can be well-approximated by two small matrices multiplied together.
+
+<MermaidDiagram chart={`graph LR
+  classDef frozen fill:#dbeafe,stroke:#60a5fa,color:#1e3a8a
+  classDef lora fill:#dcfce7,stroke:#4ade80,color:#14532d
+  classDef math fill:#6366f1,stroke:#4f46e5,color:#fff
+
+  W["W (frozen)\n4096 × 4096\n= 16,777,216 params\n🔒 never updated"] --> OUT
+  A["A matrix ✏️\n4096 × r\nr = 16\n= 65,536 params"] --> B["B matrix ✏️\nr × 4096\nr = 16\n= 65,536 params"]
+  B --> DELTA["ΔW = B × A\n(low-rank approximation\nof the full update)"]
+  DELTA --> OUT["Output = Wx + ΔWx\n= Wx + BAx"]
+  W --> OUT
+
+  class W frozen
+  class A,B lora
+  class DELTA,OUT math`}
+/>
+
+Instead of 16.7M trainable parameters per weight matrix, LoRA uses just 131k — less than **0.8%** — and achieves results that are remarkably close to full fine-tuning.
+
+<StepWalkthrough
+  steps={[
+    {
+      title: "Step 1: Why low-rank works — the math intuition",
+      body: "A matrix's rank tells you how many independent 'directions' it encodes. A full-rank 4096×4096 matrix encodes 4096 independent dimensions. But when you fine-tune a model on a specific task, you're only teaching it a narrow set of new behaviors — which means the actual update only needs a few new directions.\n\nImagine a 1000-page dictionary. Adding a 'medical terminology' mode requires adding only medical-specific associations — a few hundred new relationships, not thousands. The update is low-dimensional even if the original dictionary is huge.\n\nLoRA exploits this by constraining ΔW = BA, where the rank r controls how many 'new directions' the update can encode.",
+      whyItMatters: "This isn't just a heuristic — it's supported by empirical evidence. Papers have shown that even for rank r=1, LoRA can achieve good results on many tasks. For most fine-tuning scenarios, the task-specific knowledge fits into a very low-dimensional subspace.",
+      diagram: `graph TD
+  classDef full fill:#fee2e2,stroke:#f87171,color:#7f1d1d
+  classDef low fill:#dcfce7,stroke:#4ade80,color:#14532d
+  classDef key fill:#6366f1,stroke:#4f46e5,color:#fff
+
+  FULL["Full weight update ΔW\n4096 × 4096\n16M numbers\n(most are near-zero for a specific task)"] --> INSIGHT["Key insight:\nmost directions barely change\n→ the update is low-rank in practice"]
+  INSIGHT --> APPROX["LoRA approximation B×A\n4096×r + r×4096\n~130k numbers for r=16\n(captures the important directions)"]
+
+  class FULL full
+  class APPROX low
+  class INSIGHT key`
+    },
+    {
+      title: "Step 2: Which layers to apply LoRA to",
+      body: "LoRA can be applied to any weight matrix in the Transformer. In practice, the most impactful targets are the attention projection matrices:\n\n• Q (query projection)\n• K (key projection)\n• V (value projection)\n• O (output projection)\n\nOptionally also apply to the feed-forward layers:\n• gate_proj, up_proj, down_proj (in modern LLaMA-style models)\n\nApplying LoRA to all of Q, K, V, O is the standard starting point. Adding the FFN layers usually helps for domain adaptation tasks but increases the number of trainable parameters.",
+      whyItMatters: "The attention matrices are where the model routes information — they determine which tokens pay attention to which others. Adapting these is how you change the model's understanding and reasoning patterns. FFN adaptation teaches it new factual associations.",
+      diagram: `graph LR
+  classDef frozen fill:#dbeafe,stroke:#60a5fa,color:#1e3a8a
+  classDef lora fill:#dcfce7,stroke:#4ade80,color:#14532d
+  classDef neutral fill:#f1f5f9,stroke:#94a3b8,color:#334155
+
+  IN(["Token embedding"]) --> ATT["Multi-head attention\n├ Q projection ← LoRA ✏️\n├ K projection ← LoRA ✏️\n├ V projection ← LoRA ✏️\n└ O projection ← LoRA ✏️"]
+  ATT --> FFN["Feed-forward layers\n├ gate_proj (optional LoRA)\n├ up_proj (optional LoRA)\n└ down_proj (optional LoRA)"]
+  FFN --> OUT["Output"]
+
+  class ATT lora
+  class IN,OUT frozen`
+    },
+    {
+      title: "Step 3: The rank hyperparameter r",
+      body: "The rank r is the most important LoRA hyperparameter. It controls how many 'new directions' the update can encode:\n\n• r = 1: 32k parameters total for a 4096-dim layer — extreme compression, works for very similar tasks\n• r = 4: 130k parameters — good for simple style/format changes\n• r = 16: 524k parameters — the standard choice, works well for most tasks\n• r = 64: 2M parameters — for significant domain adaptation\n• r = 128: 4M parameters — approaching full fine-tuning expressiveness\n\nRule of thumb: start with r=16. If results are poor, try r=64. If results are great, try r=8 to save memory.",
+      whyItMatters: "Higher rank = more expressiveness but more memory, more training time, more risk of overfitting. Lower rank = faster, cheaper, but less able to make complex changes. r=16 is the community's hard-won default for a reason.",
+      diagram: `graph LR
+  classDef low fill:#dcfce7,stroke:#4ade80,color:#14532d
+  classDef mid fill:#fef3c7,stroke:#f59e0b,color:#78350f
+  classDef high fill:#ede9fe,stroke:#8b5cf6,color:#4c1d95
+
+  R1["r = 4\n~65k params/layer\n→ Style changes\n→ Simple format\n✓ Very fast"] --> R16["r = 16 (default)\n~524k params/layer\n→ Most tasks\n→ Instruction following\n✓ Best starting point"]
+  R16 --> R64["r = 64\n~2M params/layer\n→ Domain adaptation\n→ New vocabulary\n⚠️ More compute"]
+
+  class R1 low
+  class R16 mid
+  class R64 high`
+    },
+    {
+      title: "Step 4: The alpha scaling factor",
+      body: "LoRA introduces a scaling hyperparameter alpha (α) that controls how much the LoRA update is amplified before being added to the frozen weights:\n\nOutput = Wx + (α/r) × BAx\n\nThe (α/r) term scales the contribution of the LoRA update. Setting α = 2r makes the effective learning rate for LoRA 2× larger. Setting α = r means no extra scaling.\n\nIn practice:\n• Set alpha = r (e.g., r=16, alpha=16) — no scaling, LoRA learns at the base learning rate\n• Or set alpha = 2r (e.g., r=16, alpha=32) — LoRA learns more aggressively\n\nMost practitioners just set alpha = r and tune the learning rate instead.",
+      whyItMatters: "Alpha/r is effectively a second learning rate multiplier for the LoRA matrices. Separate control allows you to tune how aggressively LoRA adapts without changing the base learning rate that affects all other aspects of training.",
+      diagram: `graph LR
+  classDef frozen fill:#dbeafe,stroke:#60a5fa,color:#1e3a8a
+  classDef lora fill:#dcfce7,stroke:#4ade80,color:#14532d
+  classDef scale fill:#fef3c7,stroke:#f59e0b,color:#78350f
+
+  WX["Wx\n(frozen base output)"] --> ADD
+  BA["(α/r) × BAx\n(scaled LoRA update)"] --> ADD
+  ALPHA["α = 32, r = 16\nscaling = α/r = 2×"] --> BA
+  ADD["Output = Wx + (α/r)BAx"]
+
+  class WX frozen
+  class BA lora
+  class ALPHA scale`
+    },
+    {
+      title: "Step 5: Initialization — why B starts at zero",
+      body: "At the start of LoRA training:\n• Matrix A is initialized with random values (using Gaussian or Kaiming initialization)\n• Matrix B is initialized to all zeros\n\nThis means at step 0: BA = B×A = zeros×A = 0. The LoRA update is zero.\n\nIn other words, at the very start of fine-tuning, the model behaves exactly like the original pre-trained model. There's no sudden disruption when you add the LoRA layers. The model starts from a stable point and gradually learns the adaptation.\n\nAs training proceeds, B learns non-zero values and the adaptation kicks in.",
+      whyItMatters: "Starting from zero means the first gradient steps push LoRA in the right direction rather than some random direction. If B were random, the first forward pass would produce garbage outputs unrelated to the pre-trained model's predictions, making early training very noisy.",
+      diagram: `graph LR
+  classDef zero fill:#f1f5f9,stroke:#94a3b8,color:#334155
+  classDef random fill:#fef3c7,stroke:#f59e0b,color:#78350f
+  classDef learned fill:#dcfce7,stroke:#4ade80,color:#14532d
+
+  INIT["Initialization\nA: random (Kaiming)\nB: all zeros ← key"] --> STEP0["Step 0\nBA = 0\nModel = pre-trained exactly"]
+  STEP0 --> STEP100["After 100 steps\nB has small values\nModel: slight adaptation"]
+  STEP100 --> STEPN["After N steps\nB has learned values\nModel: task-specialized"]
+
+  class INIT random
+  class STEP0 zero
+  class STEP100,STEPN learned`
+    },
+    {
+      title: "Step 6: Merging LoRA for deployment",
+      body: "After training, you have two things: the original frozen weights W and the trained LoRA matrices A and B. For deployment, you can:\n\n• Keep them separate (slower at inference, but you can swap different adapters)\n• Merge them: W_final = W + BA — produces a single weight matrix identical to full fine-tuning result, with zero inference overhead\n\nMerging is preferred for production. The final merged model runs at exactly the same speed as the original base model, as if you had done full fine-tuning.\n\nYou can also keep multiple sets of A and B for different tasks and swap them on the fly without reloading the base model (hot-swapping adapters).",
+      whyItMatters: "Adapter hot-swapping is powerful for multi-task serving: host one copy of the 7B base model, load the customer-service adapter for one user, the legal-analysis adapter for another, the code-review adapter for a third — all from a single model deployment.",
+      diagram: `graph LR
+  classDef base fill:#dbeafe,stroke:#60a5fa,color:#1e3a8a
+  classDef lora fill:#ede9fe,stroke:#8b5cf6,color:#4c1d95
+  classDef merged fill:#dcfce7,stroke:#4ade80,color:#14532d
+
+  W["Base weights W\n(frozen, 16GB)"] --> M["W_final = W + BA\n(merge for deployment)"]
+  A["LoRA A (trained, 65k)"] --> BA["BA product"]
+  B["LoRA B (trained, 65k)"] --> BA
+  BA --> M
+  M --> DEPLOY["Deployed model\nSame size as base\nZero inference overhead ✅"]
+
+  class W base
+  class A,B lora
+  class M,DEPLOY merged`
+    },
+  ]}
+/>
+
+## Adjust LoRA Rank
+
+<ParameterSlider preset="lora-rank" />
+
+<ConceptCheck
+  question="You're fine-tuning with LoRA using rank r=16. The weight matrices in your attention layers are 4096×4096. You apply LoRA to Q, K, V, and O projections, and your model has 32 Transformer layers. How many total trainable parameters does LoRA add?"
+  answer="Each LoRA pair (A + B) for one 4096×4096 matrix with r=16 has: 4096×16 + 16×4096 = 65,536 + 65,536 = 131,072 parameters. You're applying to Q, K, V, O = 4 matrices per layer. 4 × 131,072 = 524,288 parameters per layer. Across 32 layers: 32 × 524,288 = 16,777,216 total LoRA parameters. That's 16.7M trainable parameters on top of a ~7 billion parameter frozen base — roughly 0.24% of the total model size."
+/>
+
+## Why LoRA Became the Standard
+
+LoRA isn't the only PEFT method (Chapter 9), but it won out for practical reasons:
+
+<MermaidDiagram chart={`graph TD
+  classDef win fill:#dcfce7,stroke:#4ade80,color:#14532d
+  classDef neutral fill:#ede9fe,stroke:#8b5cf6,color:#4c1d95
+
+  W1["✓ Near full fine-tuning quality\non most benchmarks"] --> LORA
+  W2["✓ Zero inference overhead\n(merge before deploy)"] --> LORA
+  W3["✓ Works on consumer hardware\n(RTX 3090 = 7B fine-tune)"] --> LORA
+  W4["✓ Easy adapter hot-swap\n(multiple tasks, one model)"] --> LORA
+  W5["✓ Simple: only 2 new hyperparams\n(rank r and alpha)"] --> LORA
+  LORA["LoRA\nde facto standard for\nefficient fine-tuning"]
+
+  class W1,W2,W3,W4,W5,LORA win`}
+/>

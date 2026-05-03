@@ -1,0 +1,164 @@
+import AnalogyCard from '@/components/interactive/AnalogyCard';
+import StepWalkthrough from '@/components/interactive/StepWalkthrough';
+import MermaidDiagram from '@/components/interactive/MermaidDiagram';
+import ConceptCheck from '@/components/interactive/ConceptCheck';
+
+<AnalogyCard
+  title="Curating the right study flashcards"
+  body="Imagine you're preparing for a medical licensing exam. You could make 50,000 flashcards by copying every sentence from every textbook — but most of them would be irrelevant noise. Or you could curate 2,000 cards that specifically cover the question patterns, the clinical reasoning chains, and the tricky edge cases that actually appear on the exam. The second approach wins. Fine-tuning datasets work the same way: a small, carefully curated collection of high-quality examples beats a huge dump of loosely related text. Every example you include teaches the model something — make sure it's teaching the right thing."
+/>
+
+## Why Dataset Quality Is Everything
+
+The single biggest lever in fine-tuning quality is not the model size, not the learning rate, not even the training duration — it's the quality of the training data. Here's why:
+
+<MermaidDiagram chart={`graph LR
+  classDef bad fill:#fee2e2,stroke:#f87171,color:#7f1d1d
+  classDef good fill:#dcfce7,stroke:#4ade80,color:#14532d
+
+  NOISE["10,000 noisy examples\n──────────────────────\nInconsistent tone\nSome factually wrong\nMixed formats\nOff-task examples\n→ Confused, unreliable model"] --> Q
+  QUALITY["500 clean examples\n──────────────────────\nConsistent style and tone\nFactually verified\nPerfect format\nOn-task throughout\n→ Sharp, reliable model"] --> Q
+  Q{"Which wins?"}
+  Q --> ANS["Quality wins\nevery time"]
+
+  class NOISE bad
+  class QUALITY good`}
+/>
+
+<StepWalkthrough
+  steps={[
+    {
+      title: "Step 1: Define the task precisely",
+      body: "Before collecting a single example, write down exactly what you want the model to do. Be specific:\n\n❌ Vague: 'Summarize documents'\n✅ Specific: 'Given a legal contract of 500–5000 words, produce a 3-bullet summary covering: (1) parties involved, (2) key obligations, (3) termination conditions. Use plain English, no jargon.'\n\nThis definition is your spec. Every example in your dataset should be a perfect instance of this spec. Any example that doesn't match — even partially — is noise that teaches the model the wrong thing.",
+      whyItMatters: "Ambiguous task definitions produce ambiguous models. If your training examples show three different output formats, the model will randomly produce three different formats. Nail the spec first.",
+      diagram: `graph TD
+  classDef bad fill:#fee2e2,stroke:#f87171,color:#7f1d1d
+  classDef good fill:#dcfce7,stroke:#4ade80,color:#14532d
+  classDef spec fill:#6366f1,stroke:#4f46e5,color:#fff
+
+  VAGUE["Vague spec: 'be helpful'\n→ what format?\n→ what length?\n→ what tone?\n→ what to avoid?"] --> CONFUSED["Model outputs differ\nfor every similar input"]
+  PRECISE["Precise spec:\n'3-bullet summary\nplain English\nmax 100 words each bullet'\n→ examples all match this"] --> CONSISTENT["Model consistently\nproduces correct format"]
+
+  class VAGUE,CONFUSED bad
+  class PRECISE,CONSISTENT good`
+    },
+    {
+      title: "Step 2: Choose a data format",
+      body: "Most modern fine-tuning uses instruction-response format. Each example is a dialogue:\n\n{\n  'instruction': 'Classify the sentiment...',\n  'input': 'The product broke after one day.',\n  'output': 'Negative'\n}\n\nThis gets formatted with the model's chat template into tokens:\n[INST] Classify the sentiment: The product broke after one day. [/INST] Negative\n\nThe model learns to produce the output given the instruction+input. Common formats: Alpaca (instruction/input/output), ShareGPT (multi-turn conversation), JSONL (one JSON object per line).",
+      whyItMatters: "Format consistency is critical. If half your examples use 'Output:' and half use 'Answer:', the model learns nothing about when to use which — it just produces whichever it last saw. Pick one format and stick to it.",
+      diagram: `graph LR
+  classDef raw fill:#dbeafe,stroke:#60a5fa,color:#1e3a8a
+  classDef fmt fill:#ede9fe,stroke:#8b5cf6,color:#4c1d95
+  classDef tok fill:#6366f1,stroke:#4f46e5,color:#fff
+
+  R["Raw example\n{instruction, input, output}"] --> T["Chat template\n[INST] instruction + input [/INST]"]
+  T --> TOK["Tokenized\n[1, 733, 16289, ...]\nloss computed on output tokens only"]
+
+  class R raw
+  class T fmt
+  class TOK tok`
+    },
+    {
+      title: "Step 3: Source your data",
+      body: "Where do your examples come from? Common sources:\n\n• Human annotation: highest quality, expensive (~$1–20 per example)\n• Existing datasets: Hugging Face Datasets hub has thousands of free datasets\n• Synthetic generation: use a stronger model (GPT-4, Claude) to generate examples — surprisingly effective\n• Web scraping: find domain-specific text and convert to instruction format\n• Your own logs: if you have existing user queries + good answers, that's gold\n\nFor synthetic generation: generate → filter → verify. Don't blindly use LLM outputs. Check a sample manually for accuracy and quality.",
+      whyItMatters: "Synthetic data has democratized fine-tuning. Models like Alpaca (Stanford, 2023) were fine-tuned on 52k GPT-3-generated examples and produced surprisingly capable instruction followers — at near-zero cost.",
+      diagram: `graph TD
+  classDef source fill:#dbeafe,stroke:#60a5fa,color:#1e3a8a
+  classDef filter fill:#fef3c7,stroke:#f59e0b,color:#78350f
+  classDef final fill:#dcfce7,stroke:#4ade80,color:#14532d
+
+  H["Human annotation\n💰 expensive, high quality"] --> POOL
+  HF["Hugging Face datasets\n🆓 free, varies in quality"] --> POOL
+  SYN["Synthetic (GPT-4 / Claude)\n💡 cheap, verify manually"] --> POOL
+  POOL[("Raw data pool\n(unfiltered)")] --> FILTER["Filter & verify\nremove bad examples\ncheck a sample manually"]
+  FILTER --> DS[("Clean dataset\nready for training")]
+
+  class H,HF,SYN source
+  class POOL,FILTER filter
+  class DS final`
+    },
+    {
+      title: "Step 4: How many examples do you need?",
+      body: "There's no universal answer, but here are practical ranges:\n\n• Simple format / style change: 200–500 examples\n• Classification task: 500–2,000 per class\n• Instruction following (new behavior): 1,000–10,000 examples\n• Domain adaptation (new vocabulary/knowledge): 5,000–50,000 examples\n• Complex multi-step reasoning: 10,000–100,000 examples\n\nStart small (500 examples), fine-tune, evaluate. If the model isn't learning what you want, add more data — but first check if the existing examples are high quality. Adding 10,000 bad examples won't help.",
+      whyItMatters: "Over-collecting data is a common trap. Curating 500 great examples takes less time than curating 10,000 mediocre ones, and often produces better results. Always establish a quality baseline before scaling.",
+      diagram: `graph LR
+  classDef low fill:#dcfce7,stroke:#4ade80,color:#14532d
+  classDef mid fill:#fef3c7,stroke:#f59e0b,color:#78350f
+  classDef high fill:#ede9fe,stroke:#8b5cf6,color:#4c1d95
+
+  S["200–500 examples\n→ Style / format changes\n→ Simple classification\n✅ Start here"] --> M["1k–10k examples\n→ New instruction behaviors\n→ Domain vocabulary\n⚠️ Check quality first"]
+  M --> L["10k–100k examples\n→ Deep domain adaptation\n→ Complex reasoning chains\n🔬 Only if smaller fails"]
+
+  class S low
+  class M mid
+  class L high`
+    },
+    {
+      title: "Step 5: Clean and filter your data",
+      body: "Raw data is almost never fine-tuning ready. Clean it:\n\n• Remove duplicates: near-identical examples waste training compute and cause overfitting\n• Filter by length: examples that are too short (< 10 tokens) or too long (> model context window) are problematic\n• Check output quality: sample 50–100 examples and manually verify the outputs are correct\n• Verify formatting: make sure every example follows your schema exactly\n• Remove personally identifiable information (PII): emails, names, phone numbers can cause the model to memorize and reproduce them\n\nA 10% sample manual review is the minimum. If you find >5% bad examples in the sample, review everything.",
+      whyItMatters: "Duplicates are particularly dangerous — they cause the model to memorize specific examples instead of generalizing. Even 5% duplicates in a 1,000-example dataset can noticeably hurt quality.",
+      diagram: `graph LR
+  classDef raw fill:#fee2e2,stroke:#f87171,color:#7f1d1d
+  classDef step fill:#fef3c7,stroke:#f59e0b,color:#78350f
+  classDef clean fill:#dcfce7,stroke:#4ade80,color:#14532d
+
+  RAW[("Raw examples\n(unclean)")] --> DUP["Dedup\nremove duplicates"]
+  DUP --> LEN["Length filter\nremove too short/long"]
+  LEN --> PII["PII scrub\nremove personal data"]
+  PII --> QC["Manual spot-check\n50–100 examples"]
+  QC --> CLEAN[("Clean dataset\nready to train")]
+
+  class RAW raw
+  class DUP,LEN,PII,QC step
+  class CLEAN clean`
+    },
+    {
+      title: "Step 6: Split into train, validation, and test sets",
+      body: "Just like training from scratch, fine-tuning needs a validation set to monitor for overfitting and a test set for honest final evaluation.\n\nTypical splits:\n• Training: 80–90% of examples\n• Validation: 5–10% (used to pick the best checkpoint during training)\n• Test: 5–10% (used once at the end to report final performance)\n\nImportant: split before any preprocessing. If you split after cleaning, you might accidentally contaminate the test set by cleaning based on knowledge of the whole dataset.",
+      whyItMatters: "A test set that's been 'seen' during any part of the pipeline gives an overly optimistic accuracy number. That's misleading and will cause you to ship a model that underperforms in production.",
+      diagram: `graph LR
+  classDef all fill:#dbeafe,stroke:#60a5fa,color:#1e3a8a
+  classDef train fill:#6366f1,stroke:#4f46e5,color:#fff
+  classDef val fill:#fef3c7,stroke:#f59e0b,color:#78350f
+  classDef test fill:#dcfce7,stroke:#4ade80,color:#14532d
+
+  DS[("1,000 examples")] --> TR["Train: 800\nmodel learns from these"]
+  DS --> V["Val: 100\nmonitor overfitting"]
+  DS --> TE["Test: 100\nfinal honest eval only"]
+
+  class DS all
+  class TR train
+  class V val
+  class TE test`
+    },
+  ]}
+/>
+
+<ConceptCheck
+  question="You have 50,000 customer support chat logs. You want to fine-tune a model to handle customer queries. What are the three most important things to do with this raw data before training?"
+  answer="(1) Deduplicate — customer support logs often have near-identical templated responses; duplicates cause memorization. (2) Filter for quality — keep only conversations where the human agent gave a good, complete answer; remove escalations, incomplete responses, and cases where the agent was wrong. (3) PII scrub — chat logs contain names, account numbers, email addresses, phone numbers; the model must not memorize and reproduce these. After these three steps, sample 100 examples manually to verify quality before training."
+/>
+
+## The Data Flywheel
+
+The best fine-tuning pipelines treat data as an ongoing process:
+
+<MermaidDiagram chart={`graph TD
+  classDef step fill:#ede9fe,stroke:#8b5cf6,color:#4c1d95
+  classDef deploy fill:#dcfce7,stroke:#4ade80,color:#14532d
+  classDef feedback fill:#fef3c7,stroke:#f59e0b,color:#78350f
+
+  A["Curate initial dataset\n(500–1,000 examples)"] --> B["Fine-tune model\n(v1)"]
+  B --> C["Deploy and collect\nreal user interactions"]
+  C --> D["Review failures\nand edge cases"]
+  D --> E["Add new examples\nfor failure modes"]
+  E --> F["Re-fine-tune\n(v2, v3, ...)"]
+  F --> C
+
+  class A,B step
+  class C deploy
+  class D,E feedback
+  class F step`}
+/>
+
+Start small, deploy fast, learn from real usage. Each round of failures shows you exactly what examples to add next.

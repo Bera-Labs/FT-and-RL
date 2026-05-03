@@ -1,0 +1,147 @@
+import AnalogyCard from '@/components/interactive/AnalogyCard';
+import StepWalkthrough from '@/components/interactive/StepWalkthrough';
+import MermaidDiagram from '@/components/interactive/MermaidDiagram';
+import ConceptCheck from '@/components/interactive/ConceptCheck';
+
+<AnalogyCard
+  title="All pieces together: base model → fine-tune → RLHF"
+  body="You've now learned every piece of the puzzle. A pre-trained model is like raw clay — shaped by trillions of tokens but not yet useful for your specific purpose. Supervised fine-tuning is like carving it into a rough form — giving it the shape of your task. RLHF is the finishing work — polishing the surface, aligning the details with what humans actually want. This final chapter shows all three stages in one complete workflow, explains how the concepts from every prior chapter connect, and leaves you with a clear picture of how state-of-the-art AI systems are actually built."
+/>
+
+## The Three Stages of Modern LLM Development
+
+Every major language model in production today was built using some version of this three-stage pipeline:
+
+<MermaidDiagram chart={`graph LR
+  classDef stage1 fill:#dbeafe,stroke:#60a5fa,color:#1e3a8a
+  classDef stage2 fill:#ede9fe,stroke:#8b5cf6,color:#4c1d95
+  classDef stage3 fill:#dcfce7,stroke:#4ade80,color:#14532d
+
+  PT["Stage 1: Pre-training\n──────────────────\nObjective: predict next token\nData: ~500B tokens\nCost: millions of $\nResult: general language\nunderstanding and knowledge\nChapters 1–7"] --> SFT["Stage 2: Supervised Fine-Tuning\n──────────────────\nObjective: follow instructions\nData: 10k–500k curated examples\nCost: $10–$10,000\nResult: task-specific behavior\nChapters 8–18"] --> RLHF["Stage 3: RLHF\n──────────────────\nObjective: align with human preferences\nData: 25k–100k preference pairs\nCost: $100–$100,000\nResult: helpful, honest, harmless\nChapters 19–29"]
+
+  class PT stage1
+  class SFT stage2
+  class RLHF stage3`}
+/>
+
+<StepWalkthrough
+  steps={[
+    {
+      title: "Stage 1 recap: What pre-training gives you",
+      body: "A pre-trained model (Chapters 1–7) is the foundation everything builds on. Through next-token prediction on hundreds of billions of tokens, the model has internalized:\n\n• Grammar, syntax, and language structure (Chapters 2–3)\n• World knowledge: facts, relationships, causality\n• Reasoning patterns: logical inference, analogy, multi-step thinking\n• Multiple languages, domains, and writing styles\n• The Transformer architecture that processes all this (Chapter 7)\n\nWhat pre-training does NOT give you:\n• The ability to follow instructions reliably\n• Safety and refusal of harmful requests\n• Consistency with human preferences\n• A specific domain expertise\n\nPre-training is necessary but not sufficient. The model 'knows' a lot but doesn't 'behave' well yet.",
+      whyItMatters: "Pre-training is why fine-tuning works at all. Transfer learning (Chapter 11) is only possible because the pre-trained model already has rich representations — you're redirecting existing knowledge, not creating it from scratch.",
+      diagram: `graph TD
+  classDef has fill:#dcfce7,stroke:#4ade80,color:#14532d
+  classDef lacks fill:#fee2e2,stroke:#f87171,color:#7f1d1d
+
+  PRE["Pre-trained model\nLlama-3-8B / Mistral-7B / etc."] --> HAS["Has:\n✓ Rich language representations\n✓ World knowledge\n✓ Reasoning ability\n✓ Multi-lingual understanding"]
+  PRE --> LACKS["Lacks:\n✗ Instruction following\n✗ Safe behavior\n✗ Your domain expertise\n✗ Human preference alignment"]
+
+  class HAS has
+  class LACKS lacks`
+    },
+    {
+      title: "Stage 2: Supervised fine-tuning in practice",
+      body: "SFT (Chapters 8–18) teaches the model to follow instructions and specialize in your domain.\n\nFor a code review assistant:\n\n1. Dataset: 5,000 (code snippet, expert review) pairs\n2. Format: [INST] Review this code for bugs: {code} [/INST] {review}\n3. Method: QLoRA (rank=16, 4-bit base, ~4 GB VRAM)\n4. Training: 2 epochs, lr=1e-4, cosine warmup, batch=16\n5. Evaluation: LLM-as-judge scores code reviews on: completeness, accuracy, actionability\n\nAfter SFT, the model reliably produces code reviews — but it might still:\n• Be overly verbose and padded\n• Agree with incorrect code if the user sounds confident\n• Emphasize style issues over actual bugs\n\nThis is where RLHF comes in.",
+      whyItMatters: "SFT gives you directional alignment (the model does the right type of thing) but not fine-grained quality alignment (it doesn't yet do the best version of that thing). This distinction is exactly why RLHF was invented.",
+      diagram: `graph LR
+  classDef before fill:#fef3c7,stroke:#f59e0b,color:#78350f
+  classDef after fill:#dcfce7,stroke:#4ade80,color:#14532d
+
+  BEFORE["Base model\nGiven: 'Review this code'\nOutputs: 'Here is a generic\ncomment about your code...'\n(doesn't actually review)"] --> SFT["SFT on 5k examples\n(QLoRA, 2 epochs, ~$5)"]
+  SFT --> AFTER["SFT model\nGiven: 'Review this code'\nOutputs: 'Line 14: null pointer\nderef — add null check.\nLine 27: O(n²) — use hash map.'\n(actually reviews)"]
+
+  class BEFORE before
+  class AFTER after`
+    },
+    {
+      title: "Stage 3: RLHF — aligning quality and style",
+      body: "RLHF (Chapter 29) fine-tunes the SFT model to match what engineers actually want from a code review tool.\n\n1. Preference data: 2,000 pairs where engineers rated which review was more useful\n2. Reward model: fine-tuned from the SFT model + scalar head\n3. PPO training: optimize the policy to maximize reward model score − 0.05 × KL\n\nAfter RLHF:\n• Reviews prioritize critical bugs over style nits\n• Explanations are clear and actionable, not verbose\n• Model asks for context when the code is ambiguous\n• Doesn't confidently assert things it's uncertain about\n\nThese are qualitative improvements that the SFT training examples couldn't directly teach.",
+      whyItMatters: "RLHF teaches things that are hard to specify in examples: the right balance of confidence and humility, when to elaborate vs. be concise, what engineers actually find helpful vs. what they tolerate. These emerge from the preference signal, not from writing better training examples.",
+      diagram: `graph LR
+  classDef sft fill:#fef3c7,stroke:#f59e0b,color:#78350f
+  classDef rlhf fill:#dcfce7,stroke:#4ade80,color:#14532d
+
+  SFT["SFT model\n'Line 14: potential null pointer\nderef — you may want to add\na null check before accessing\nthe value on this line because...\n(continues for 8 more lines)"]
+  RLHF["RLHF model\n'Line 14: null deref bug.\nAdd: if (ptr != null) before usage.\nLine 27: switch HashMap for O(1)\nlookup instead of O(n) scan.'"]
+
+  class SFT sft
+  class RLHF rlhf`
+    },
+    {
+      title: "How all the RL concepts connect to RLHF",
+      body: "Everything from Chapters 19–29 is at work during RLHF:\n\n• Agent (Ch 20): the language model policy\n• Environment (Ch 20): the reward model + user prompts\n• State (Ch 20): the prompt + partial response generated so far\n• Action (Ch 20): the next token generated (50k choices)\n• Reward (Ch 20): reward model score, received at end of full response\n• MDP (Ch 22): token generation as a sequential decision process\n• Explore-exploit (Ch 21): temperature sampling for diverse outputs\n• Policy gradient (Ch 25): PPO's core algorithm\n• Actor-Critic (Ch 26): policy model (actor) + value model (critic)\n• PPO (Ch 27): the specific algorithm used — clips policy ratio, stable training\n• Reward hacking (Ch 28): overoptimization → sycophancy\n• KL penalty (Ch 27): prevents reward hacking",
+      whyItMatters: "Every RL concept introduced in Part 3 has a direct, concrete role in RLHF. This isn't just background theory — it's the exact machinery running when ChatGPT, Claude, or Gemini was trained.",
+      diagram: `graph TD
+  classDef rl fill:#ede9fe,stroke:#8b5cf6,color:#4c1d95
+  classDef rlhf fill:#6366f1,stroke:#4f46e5,color:#fff
+
+  AGENT["Agent = LM policy π_θ"] --> RLHF
+  ENV["Environment = reward model"] --> RLHF
+  ACTION["Action = next token"] --> RLHF
+  MDP["MDP = token generation\nsequence"] --> RLHF
+  PPO_RL["PPO = training algorithm\nwith clip + KL penalty"] --> RLHF
+  AC["Actor (LM) + Critic (value net)\n= Actor-Critic architecture"] --> RLHF
+  RLHF["RLHF training loop\nReal implementation\nof all RL theory"]
+
+  class AGENT,ENV,ACTION,MDP,PPO_RL,AC rl
+  class RLHF rlhf`
+    },
+    {
+      title: "The frontier: beyond PPO-based RLHF",
+      body: "RLHF with PPO is powerful but expensive. Newer approaches in 2024–2025:\n\n• DPO (Direct Preference Optimization): skip the reward model entirely. Directly fine-tune the LM on preference pairs using a reformulated cross-entropy objective. Same quality as RLHF in many settings, 5× cheaper.\n\n• GRPO (Group Relative Policy Optimization): used in DeepSeek-R1. Compute advantages relative to a group of responses rather than a learned value function. Eliminates the separate critic model.\n\n• Process Reward Models (PRM): instead of scoring full responses, score each reasoning step individually. Forces the model to think correctly at each step, not just arrive at the right answer.\n\n• Self-play and synthetic preference: generate many model responses, use a stronger model to rank them, train on the resulting preferences. Scales without human annotation.",
+      whyItMatters: "The field moves fast. PPO-based RLHF is being displaced by simpler, cheaper methods like DPO for many use cases. Understanding PPO deeply gives you the foundation to understand and evaluate each new method as it emerges.",
+      diagram: `graph LR
+  classDef ppo fill:#dbeafe,stroke:#60a5fa,color:#1e3a8a
+  classDef new fill:#dcfce7,stroke:#4ade80,color:#14532d
+
+  PPO["PPO-RLHF\n(2022–2023)\nInstructGPT · Claude 1–2\nNeeds: RM + value net + PPO\nCost: high"] --> DPO["DPO (2023)\nNo reward model\nDirect preference objective\nCost: ~SFT cost"]
+  PPO --> GRPO["GRPO (2024)\nGroup-relative advantages\nNo value network\nUsed in: DeepSeek-R1"]
+  PPO --> PRM["Process Reward Model\nStep-level scoring\nBetter for reasoning chains"]
+
+  class PPO ppo
+  class DPO,GRPO,PRM new`
+    },
+    {
+      title: "What you've learned across all 30 chapters",
+      body: "You now understand the full stack of modern AI development:\n\nFoundations (Ch 1–7):\n→ What ML is, how neural networks work, how they learn\n→ Backpropagation, overfitting, pre-training, Transformers\n\nFine-Tuning (Ch 8–18):\n→ What fine-tuning is, full vs. PEFT, dataset building\n→ LoRA, QLoRA, hyperparameters, evaluation, pitfalls\n\nReinforcement Learning (Ch 19–28):\n→ RL fundamentals, MDPs, Q-learning, DQN\n→ Policy gradients, Actor-Critic, PPO\n\nRLHF (Ch 29–30):\n→ Human preference data, reward models\n→ PPO for LLMs, overoptimization, DPO, alignment\n\nThis is the complete knowledge base behind every major language model deployed today.",
+      whyItMatters: "You now have the vocabulary and conceptual framework to read research papers, evaluate new techniques, design your own fine-tuning pipelines, and understand why LLMs behave the way they do — including their failure modes. That's a rare and valuable combination.",
+      diagram: `graph LR
+  classDef p1 fill:#dbeafe,stroke:#60a5fa,color:#1e3a8a
+  classDef p2 fill:#ede9fe,stroke:#8b5cf6,color:#4c1d95
+  classDef p3 fill:#fef3c7,stroke:#f59e0b,color:#78350f
+  classDef p4 fill:#dcfce7,stroke:#4ade80,color:#14532d
+
+  P1["Part 1 (Ch 1–7)\nML Foundations\nNeural nets · Gradient descent\nBackprop · Transformers"] --> P2["Part 2 (Ch 8–18)\nFine-Tuning\nLoRA · QLoRA · Datasets\nHyperparams · Evaluation"]
+  P2 --> P3["Part 3 (Ch 19–28)\nReinforcement Learning\nMDPs · Q-learning · DQN\nPPO · Actor-Critic"]
+  P3 --> P4["Part 4 (Ch 29–30)\nRLHF & Alignment\nReward models · PPO for LLMs\nDPO · Modern alignment"]
+
+  class P1 p1
+  class P2 p2
+  class P3 p3
+  class P4 p4`
+    },
+  ]}
+/>
+
+<ConceptCheck
+  question="An engineer claims that for a customer service chatbot, they can skip RLHF entirely and just use SFT on their historical chat logs. Under what conditions would this be adequate, and under what conditions would RLHF still be valuable?"
+  answer="SFT-only is adequate if: (1) the historical logs are high quality (5-star rated, expert agent responses), (2) the desired behavior can be fully specified in examples (consistent format, clear correct outputs), and (3) you don't need nuanced judgment calls (when to escalate, how direct to be, when to push back on the user). RLHF becomes valuable when: (1) the 'right' response is subjective or context-dependent (warmth vs. efficiency tradeoffs), (2) you want the model to express appropriate uncertainty rather than confidently guessing, (3) you need to prevent sycophancy (the model agreeing with wrong user claims), or (4) you want behaviors that are hard to demonstrate in examples — like knowing when NOT to help and when to redirect. For most production chatbots, a good SFT is 80% of the value; RLHF adds the last 20% of quality that makes the difference between 'works' and 'impressive'."
+/>
+
+## You've Reached the End
+
+<MermaidDiagram chart={`graph TD
+  classDef done fill:#dcfce7,stroke:#16a34a,color:#14532d
+  classDef what fill:#6366f1,stroke:#4f46e5,color:#fff
+
+  DONE["🎉 Course complete!\n30 chapters · Full ML stack · RLHF-ready"] --> NEXT["What to do next"]
+  NEXT --> A["Read the InstructGPT paper\n(Ouyang et al., 2022)\n→ original RLHF for LLMs"]
+  NEXT --> B["Try fine-tuning a model\nHugging Face + TRL library\n→ practical hands-on"]
+  NEXT --> C["Read the LoRA paper\n(Hu et al., 2021)\n→ understand the math"]
+  NEXT --> D["Explore RLHF libraries:\nTRL · OpenRLHF · Axolotl"]
+  NEXT --> E["Follow research:\narXiv cs.LG · cs.CL\n@alignment_forum"]
+
+  class DONE done
+  class NEXT,A,B,C,D,E what`}
+/>

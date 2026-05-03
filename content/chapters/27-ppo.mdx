@@ -1,0 +1,165 @@
+import AnalogyCard from '@/components/interactive/AnalogyCard';
+import StepWalkthrough from '@/components/interactive/StepWalkthrough';
+import MermaidDiagram from '@/components/interactive/MermaidDiagram';
+import ConceptCheck from '@/components/interactive/ConceptCheck';
+
+<AnalogyCard
+  title="Taking small, safe steps instead of giant leaps"
+  body="Imagine you're learning to walk a tightrope. Each session, your trainer adjusts your technique slightly — a small lean correction here, a weight shift there. If the trainer tried to correct everything at once with huge adjustments, you'd lose your balance entirely. Small, controlled changes let you maintain stability while still making progress. PPO (Proximal Policy Optimization) applies this exact philosophy to neural network training: it limits how much the policy can change in any single update, keeping the new policy 'close to' the old one. This prevents the catastrophic policy degradation that plagued earlier RL methods and makes PPO robust enough to train large language models."
+/>
+
+## The Problem PPO Solves
+
+Vanilla policy gradient methods can fail catastrophically: a single large update can push the policy so far from where it was that it becomes worse, and subsequent updates make it even worse — a cycle that's hard to recover from.
+
+<MermaidDiagram chart={`graph LR
+  classDef bad fill:#fee2e2,stroke:#f87171,color:#7f1d1d
+  classDef good fill:#dcfce7,stroke:#4ade80,color:#14532d
+
+  VANILLA["Vanilla policy gradient\n──────────────────\nLarge update → policy changes a lot\nNew policy might be much worse\nCollect new data with bad policy\n→ More bad updates\n→ Training collapse"]
+  PPO["PPO\n──────────────────\nClipped update → policy changes little\nNew policy stays near old policy\nSafe to collect data with new policy\n→ Stable, monotonic improvement"]
+
+  class VANILLA bad
+  class PPO good`}
+/>
+
+<StepWalkthrough
+  steps={[
+    {
+      title: "Step 1: The importance ratio",
+      body: "PPO is built around the importance ratio — the ratio between the new policy's probability of an action and the old policy's probability:\n\nr_t(θ) = π_θ(a_t | s_t) / π_θ_old(a_t | s_t)\n\nThis ratio tells you: 'Compared to when we collected this experience, how much more (or less) likely is the new policy to take this action?'\n\n• r > 1: new policy is more likely to take this action than the old policy was\n• r = 1: policies are identical for this action\n• r < 1: new policy is less likely to take this action\n\nThe standard policy gradient objective scales the advantage by this ratio, which allows reusing data collected from the old policy.",
+      whyItMatters: "The importance ratio is what enables PPO to be an off-policy method in a limited sense — you can collect experience with the old policy, then update the new policy multiple times on that same data, as long as the two policies don't diverge too much.",
+      diagram: `graph LR
+  classDef old fill:#dbeafe,stroke:#60a5fa,color:#1e3a8a
+  classDef new fill:#6366f1,stroke:#4f46e5,color:#fff
+  classDef ratio fill:#dcfce7,stroke:#4ade80,color:#14532d
+
+  OLD["Old policy π_θ_old\nP(action a) = 0.3\n(used to collect data)"] --> RATIO
+  NEW["New policy π_θ\nP(action a) = 0.45\n(after one update)"] --> RATIO
+  RATIO["Importance ratio r\n= 0.45 / 0.30 = 1.5\n(new policy 50% more likely to take a)"]
+
+  class OLD old
+  class NEW new
+  class RATIO ratio`
+    },
+    {
+      title: "Step 2: The clipped surrogate objective",
+      body: "The core PPO innovation: clip the importance ratio so it can't deviate too far from 1.\n\nPPO objective:\nL_CLIP(θ) = E_t [ min(r_t × A_t, clip(r_t, 1−ε, 1+ε) × A_t) ]\n\nWith ε typically = 0.2, the ratio is clipped to the range [0.8, 1.2].\n\nInterpretation:\n• If A_t > 0 (good action): we want to increase π_θ(a). But if r_t > 1.2 (we've already increased it a lot), the clip kicks in — no further increase. This prevents overcommitting to good actions.\n• If A_t < 0 (bad action): we want to decrease π_θ(a). But if r_t < 0.8 (we've already decreased it a lot), the clip stops us — prevents overcommitting to avoiding actions.",
+      whyItMatters: "The clip is why PPO is stable. Without it, a batch of data with a large positive advantage could push the policy to assign probability 1.0 to that action — after which no gradient flows to anything else and training collapses. The clip limits the maximum change per update.",
+      diagram: `graph LR
+  classDef clip fill:#6366f1,stroke:#4f46e5,color:#fff
+  classDef good fill:#dcfce7,stroke:#4ade80,color:#14532d
+  classDef block fill:#fef3c7,stroke:#f59e0b,color:#78350f
+
+  R1["r = 1.05, A = +2.0\n(small increase, positive advantage)\nmin(1.05×2, clip(1.05,0.8,1.2)×2)\n= min(2.1, 1.05×2) = 2.1\n→ update proceeds normally ✅"] --> TAKE
+  R2["r = 1.5, A = +2.0\n(large increase, positive advantage)\nmin(1.5×2, clip(1.5,0.8,1.2)×2)\n= min(3.0, 1.2×2) = 2.4\n→ clip limits the update ⚠️"] --> TAKE
+  TAKE["Gradient computed\nθ updated by this objective"]
+
+  class R1 good
+  class R2 block`
+    },
+    {
+      title: "Step 3: The KL divergence penalty (alternative formulation)",
+      body: "An alternative to clipping: add a KL divergence penalty to the objective:\n\nL_KL(θ) = L_PG(θ) − β × KL[π_θ_old || π_θ]\n\nKL divergence measures how different the new policy is from the old one. The penalty discourages large changes.\n\nThe KL coefficient β is adaptive:\n• If KL > 1.5 × target KL: increase β (tighten the constraint)\n• If KL < target KL / 1.5: decrease β (loosen the constraint)\n\nThis adaptive KL method is used in some RLHF implementations (including early InstructGPT). Clipping is simpler and more commonly used.",
+      whyItMatters: "The KL penalty is conceptually cleaner — it directly measures how much the policy changed and penalizes it. The clip is a computational shortcut that achieves similar behavior. For LLM RLHF (Chapter 29), the KL penalty has an additional interpretation: preventing the model from drifting too far from the base model's distribution.",
+      diagram: `graph LR
+  classDef obj fill:#6366f1,stroke:#4f46e5,color:#fff
+  classDef kl fill:#fef3c7,stroke:#f59e0b,color:#78350f
+  classDef adapt fill:#dcfce7,stroke:#4ade80,color:#14532d
+
+  LOSS["Total objective:\nL = L_PG − β × KL(π_old || π_new)"] --> KL["KL divergence\nmeasures policy change"]
+  KL --> SMALL["KL < target\n→ decrease β\n(allow more change)"]
+  KL --> LARGE["KL > 1.5 × target\n→ increase β\n(tighten constraint)"]
+
+  class LOSS obj
+  class KL kl
+  class SMALL,LARGE adapt`
+    },
+    {
+      title: "Step 4: PPO training loop",
+      body: "The PPO training loop:\n\n1. Collect T steps of experience using current policy π_θ_old\n2. Compute advantages A_t using GAE (Chapter 26)\n3. For K epochs (typically 3–10):\n   a. Sample random mini-batches from the collected data\n   b. Compute L_CLIP + value function loss + entropy bonus\n   c. Update θ via gradient ascent on L_CLIP\n   d. Update critic (value network) via gradient descent\n4. Set π_θ_old ← π_θ (update old policy)\n5. Repeat from step 1\n\nKey difference from vanilla policy gradient: multiple epochs over the same data (K epochs). The clip ensures that multiple updates on the same batch don't cause runaway policy changes.",
+      whyItMatters: "Multiple epochs per batch is why PPO is more sample efficient than REINFORCE. Each collected trajectory contributes to K gradient updates, not just one. The clip makes this safe — without it, multiple updates on the same data would cause the policy to diverge.",
+      diagram: `graph TD
+  classDef collect fill:#dbeafe,stroke:#60a5fa,color:#1e3a8a
+  classDef compute fill:#fef3c7,stroke:#f59e0b,color:#78350f
+  classDef update fill:#6366f1,stroke:#4f46e5,color:#fff
+  classDef sync fill:#dcfce7,stroke:#4ade80,color:#14532d
+
+  COLL["Collect T steps\nusing π_θ_old"] --> ADV["Compute advantages\nusing GAE (λ=0.95)"]
+  ADV --> EPOCH["For K epochs (e.g. 4):"]
+  EPOCH --> BATCH["Sample mini-batch\nfrom collected data"]
+  BATCH --> LOSS["Compute:\nL_CLIP + L_VF + entropy"]
+  LOSS --> GRAD["Gradient update\nθ ← θ + α∇L_CLIP"]
+  GRAD --> NEXT{"More\nmin-batches?"}
+  NEXT --"Yes"--> BATCH
+  NEXT --"No"--> OLD["π_θ_old ← π_θ\n(sync old policy)"]
+  OLD --> COLL
+
+  class COLL collect
+  class ADV compute
+  class BATCH,LOSS,GRAD update
+  class OLD sync`
+    },
+    {
+      title: "Step 5: PPO for language models",
+      body: "For LLM alignment (RLHF, Chapter 29), PPO is applied as follows:\n\n• State: the conversation / prompt so far\n• Action: the next token to generate (50,000+ choices)\n• Policy: the language model π_θ\n• Reward: score from a reward model (trained on human preferences)\n• KL penalty: additional term that penalizes how far the policy drifts from the reference (pre-RL) model\n\nObjective: maximize reward model score while staying close to the original model's distribution.\n\nA complete response is generated in one 'episode' — the agent makes thousands of token choices, then receives a single reward signal at the end.",
+      whyItMatters: "The KL penalty against the reference model is crucial for LLM RLHF. Without it, the model would quickly learn to produce responses that 'trick' the reward model — responses that score high but are gibberish or off-distribution. The KL penalty keeps the language natural.",
+      diagram: `graph LR
+  classDef state fill:#dbeafe,stroke:#60a5fa,color:#1e3a8a
+  classDef action fill:#ede9fe,stroke:#8b5cf6,color:#4c1d95
+  classDef reward fill:#dcfce7,stroke:#4ade80,color:#14532d
+  classDef kl fill:#fef3c7,stroke:#f59e0b,color:#78350f
+
+  S(["Prompt:\n'Explain quantum computing'"]) --> LM["LM policy π_θ\n(50k vocab actions)"]
+  LM --> GEN["Generate response\n(sequence of token actions)"]
+  GEN --> RM["Reward model\nscores response quality"]
+  RM --> REW["r = 4.2 (reward score)"]
+  REW --> KL["− β × KL(π_θ || π_ref)\n(stay close to reference LM)"]
+  KL --> OBJ["PPO objective\nmaximize r − β×KL"]
+
+  class S state
+  class LM,GEN action
+  class RM,REW reward
+  class KL,OBJ kl`
+    },
+    {
+      title: "Step 6: PPO hyperparameters",
+      body: "Key PPO hyperparameters:\n\n• clip_range ε: 0.1–0.3 (higher = more aggressive updates). For LLMs: start with 0.2.\n• learning_rate: 1e-5 to 3e-5 for LLMs (very small — model is already well-trained)\n• num_epochs K: 2–10 (too many → policy diverges despite clipping). For LLMs: 1–4.\n• batch_size: 128–512 for games; 32–128 for LLMs\n• GAE λ: 0.95 (default, works well across domains)\n• KL target (if using adaptive KL): 0.01–0.05 (controls how fast the LM can change)\n• entropy_coeff: 0.01–0.05 (encourages exploration, keeps policy diverse)\n\nFor LLM fine-tuning, the PPO learning rate should be 1–5× smaller than the LoRA fine-tuning learning rate — the model has already been fine-tuned and we're making more subtle adjustments.",
+      whyItMatters: "PPO hyperparameters for LLMs are far more sensitive than for games. Language models are high-capacity systems in a narrow region of good behavior. Large updates can degrade fluency or coherence quickly. Start with very conservative settings and increase only if necessary.",
+      diagram: `graph TD
+  classDef param fill:#ede9fe,stroke:#8b5cf6,color:#4c1d95
+  classDef game fill:#dbeafe,stroke:#60a5fa,color:#1e3a8a
+  classDef llm fill:#dcfce7,stroke:#4ade80,color:#14532d
+
+  PARAMS["PPO Hyperparameters"] --> CLIP["clip ε\nGames: 0.2\nLLMs: 0.1–0.2"]
+  PARAMS --> LR["learning rate\nGames: 3e-4\nLLMs: 1e-6 to 1e-5"]
+  PARAMS --> EPOCHS["num_epochs\nGames: 4–10\nLLMs: 1–4"]
+  PARAMS --> KL["KL target\nGames: N/A\nLLMs: 0.01–0.05"]
+
+  class PARAMS param
+  class CLIP,LR,EPOCHS,KL llm`
+    },
+  ]}
+/>
+
+<ConceptCheck
+  question="In PPO, the importance ratio r_t = π_θ(a|s) / π_θ_old(a|s) is computed. If r_t = 2.0 and the advantage A_t = +3.0, what does PPO's clipped objective do, and why?"
+  answer="Without clipping: the objective would be r_t × A_t = 2.0 × 3.0 = 6.0 — a large update that increases this action's probability a lot. With ε=0.2 clipping: clip(2.0, 0.8, 1.2) = 1.2. The clipped value: 1.2 × 3.0 = 3.6. PPO takes the minimum: min(6.0, 3.6) = 3.6. The update is capped. Why: r_t = 2.0 means the new policy is already twice as likely to take this action as the old policy was. Even though the action was good, we've already made a big change — capping prevents further runaway increase that could destabilize training."
+/>
+
+## Why PPO Became the Standard
+
+<MermaidDiagram chart={`graph TD
+  classDef win fill:#dcfce7,stroke:#4ade80,color:#14532d
+  classDef center fill:#6366f1,stroke:#4f46e5,color:#fff
+
+  W1["✓ Simple to implement\n(vs. TRPO's constrained optimization)"] --> PPO
+  W2["✓ Stable training\n(clip prevents catastrophic updates)"] --> PPO
+  W3["✓ Sample efficient\n(multiple epochs per batch)"] --> PPO
+  W4["✓ Works for continuous and\nlarge discrete action spaces"] --> PPO
+  W5["✓ KL penalty interpretable\nfor LLM alignment"] --> PPO
+  W6["✓ OpenAI, DeepMind, Anthropic\nall use it for RLHF"] --> PPO
+  PPO["PPO\nThe de facto standard\nfor deep RL + RLHF"]
+
+  class W1,W2,W3,W4,W5,W6,PPO win`}
+/>

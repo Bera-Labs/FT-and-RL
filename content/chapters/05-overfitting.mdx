@@ -1,0 +1,183 @@
+import AnalogyCard from '@/components/interactive/AnalogyCard';
+import StepWalkthrough from '@/components/interactive/StepWalkthrough';
+import MermaidDiagram from '@/components/interactive/MermaidDiagram';
+import ConceptCheck from '@/components/interactive/ConceptCheck';
+
+<AnalogyCard
+  title="Memorizing the practice test vs. understanding the subject"
+  body="Imagine a student who gets every question on the practice exam right — not because they understand the subject, but because they memorized every question and answer by rote. The practice test was their training data. On exam day, the questions are worded differently. The student fails. Their 'model' was perfectly calibrated to the practice test, but it learned the surface details instead of the underlying principles. This is overfitting: when a model learns the training data so well — including its noise and quirks — that it fails to generalize to new examples."
+/>
+
+## The Generalization Problem
+
+Every ML model is trained on a finite dataset. The goal is not to perform well on that dataset specifically — it's to perform well on **new data** the model has never seen. This ability is called **generalization**.
+
+There are three possible outcomes when you train a model:
+
+<MermaidDiagram chart={`graph TD
+  classDef under fill:#fee2e2,stroke:#f87171,color:#7f1d1d
+  classDef good fill:#dcfce7,stroke:#4ade80,color:#14532d
+  classDef over fill:#fef3c7,stroke:#f59e0b,color:#78350f
+
+  T["Training complete"]
+  T --> U["😴 Underfitting\nHigh train loss\nHigh test loss\nModel too simple"]
+  T --> G["✅ Good fit\nLow train loss\nLow test loss\nGeneralizes well"]
+  T --> O["🔥 Overfitting\nVery low train loss\nHigh test loss\nMemoized training data"]
+
+  class U under
+  class G good
+  class O over`}
+/>
+
+<StepWalkthrough
+  steps={[
+    {
+      title: "Step 1: Understand the train / validation / test split",
+      body: "Before training begins, we split the full dataset into three parts:\n\n• Training set (~70%): the model sees and learns from this\n• Validation set (~15%): we evaluate on this during training to catch overfitting early\n• Test set (~15%): used only once, at the very end, to get a final honest accuracy number\n\nThe test set must never influence any training decision. It's your unbiased judge.",
+      whyItMatters: "If you tune your model based on test set performance, you've 'leaked' the test into training — and your reported accuracy is no longer honest. Always keep a truly unseen holdout.",
+      diagram: `graph LR
+  classDef all fill:#dbeafe,stroke:#60a5fa,color:#1e3a8a
+  classDef train fill:#6366f1,stroke:#4f46e5,color:#fff
+  classDef val fill:#ede9fe,stroke:#8b5cf6,color:#4c1d95
+  classDef test fill:#dcfce7,stroke:#16a34a,color:#14532d
+
+  D[("All data\n10,000 examples")] --> TR["Training set\n7,000 examples\n→ model learns from this"]
+  D --> V["Validation set\n1,500 examples\n→ monitor during training"]
+  D --> TE["Test set\n1,500 examples\n→ final honest evaluation only"]
+
+  class D all
+  class TR train
+  class V val
+  class TE test`
+    },
+    {
+      title: "Step 2: Watch the loss curves — they tell you everything",
+      body: "Plot both training loss and validation loss across epochs. The shape of these curves diagnoses your model:\n\n• Both losses decrease together → healthy training\n• Training loss keeps dropping, validation loss starts rising → overfitting is happening\n• Both losses are high and plateau early → underfitting (model too small, or not trained long enough)\n\nThe point where validation loss is lowest is the best model checkpoint.",
+      whyItMatters: "The loss curves are your early warning system. If validation loss rises while training loss drops, stop training — more epochs will make things worse, not better.",
+      diagram: `graph LR
+  classDef healthy fill:#dcfce7,stroke:#4ade80,color:#14532d
+  classDef warning fill:#fef3c7,stroke:#f59e0b,color:#78350f
+  classDef bad fill:#fee2e2,stroke:#f87171,color:#7f1d1d
+
+  E1["Epoch 1\nTrain: 0.90\nVal: 0.91"] --> E2["Epoch 10\nTrain: 0.45\nVal: 0.47"]
+  E2 --> E3["Epoch 20 ✅\nTrain: 0.22\nVal: 0.24\n(best checkpoint)"]
+  E3 --> E4["Epoch 30 ⚠️\nTrain: 0.11\nVal: 0.31\n(overfitting)"]
+  E4 --> E5["Epoch 50 🔥\nTrain: 0.06\nVal: 0.58\n(badly overfit)"]
+
+  class E1,E2 healthy
+  class E3 healthy
+  class E4 warning
+  class E5 bad`
+    },
+    {
+      title: "Step 3: Regularization — penalize complexity",
+      body: "The root cause of overfitting is that the model has too much capacity relative to the data — it can afford to 'memorize' every example rather than find general patterns. Regularization adds a penalty to the loss function that discourages the model from becoming too complex.\n\n• L2 regularization (weight decay): adds λ × Σw² to the loss. This pushes weights toward zero, preventing any single weight from becoming very large.\n• L1 regularization: adds λ × Σ|w|. Tends to push weights all the way to zero (sparsity).",
+      whyItMatters: "A model with smaller weights is simpler. It can't 'memorize' patterns by using a very specific combination of large weights — it's forced to find more general, robust features.",
+      diagram: `graph TD
+  classDef normal fill:#dbeafe,stroke:#60a5fa,color:#1e3a8a
+  classDef penalty fill:#fef3c7,stroke:#f59e0b,color:#78350f
+  classDef result fill:#dcfce7,stroke:#4ade80,color:#14532d
+
+  L["Task Loss\n(how wrong was the prediction?)"] --> TL["Total Loss = Task Loss + λ × Σw²"]
+  P["L2 Penalty\nλ × sum of squared weights"] --> TL
+  TL --> E["Effect: weights stay small\nmodel can't overfit via large weights"]
+
+  class L normal
+  class P penalty
+  class TL,E result`
+    },
+    {
+      title: "Step 4: Dropout — randomly disable neurons during training",
+      body: "Dropout is a regularization trick specific to neural networks. During each training step, we randomly 'turn off' a fraction of neurons (set their output to 0). A typical dropout rate is 10–50%.\n\nThis forces the network to not rely too heavily on any single neuron. Every neuron has to be useful on its own, because it can't count on its neighbors always being there. At inference time, dropout is turned off and all neurons are active.",
+      whyItMatters: "Dropout effectively trains an ensemble of slightly different networks and averages them together. Ensembles generalize better than single models — dropout is a cheap way to get that benefit.",
+      diagram: `graph LR
+  classDef active fill:#6366f1,stroke:#4f46e5,color:#fff
+  classDef dropped fill:#f1f5f9,stroke:#94a3b8,color:#94a3b8
+  classDef inp fill:#dbeafe,stroke:#60a5fa,color:#1e3a8a
+
+  X(["Input"]) --> H1(("h₁ ✓"))
+  X --> H2(("h₂ ✗\ndropped"))
+  X --> H3(("h₃ ✓"))
+  X --> H4(("h₄ ✗\ndropped"))
+  X --> H5(("h₅ ✓"))
+  H1 & H3 & H5 --> Out["Output\n(from only 3 of 5 neurons)"]
+
+  class H1,H3,H5 active
+  class H2,H4 dropped
+  class X inp`
+    },
+    {
+      title: "Step 5: Early stopping — quit while you're ahead",
+      body: "The simplest anti-overfitting technique: monitor validation loss during training and stop when it stops improving. Save the model weights from the best validation loss checkpoint.\n\nImplementation:\n• Track best validation loss so far\n• If validation loss hasn't improved for N epochs (the patience), stop training\n• Restore the saved checkpoint from the best epoch\n\nPatience of 3–10 epochs is typical.",
+      whyItMatters: "Early stopping is free — it requires no changes to the model architecture, no extra computation, and no hyperparameter tuning beyond patience. It's almost always worth doing.",
+      diagram: `graph LR
+  classDef good fill:#dcfce7,stroke:#4ade80,color:#14532d
+  classDef warn fill:#fef3c7,stroke:#f59e0b,color:#78350f
+  classDef stop fill:#fee2e2,stroke:#f87171,color:#7f1d1d
+
+  E10["Epoch 10\nVal loss: 0.31\n💾 save checkpoint"] --> E15["Epoch 15\nVal loss: 0.28\n💾 save checkpoint"]
+  E15 --> E20["Epoch 20\nVal loss: 0.31\n(worse)"]
+  E20 --> E25["Epoch 25\nVal loss: 0.33\n(worse)"]
+  E25 --> STOP["🛑 Stop!\nPatience=3 exceeded\nRestore epoch-15 weights"]
+
+  class E10,E15 good
+  class E20,E25 warn
+  class STOP stop`
+    },
+    {
+      title: "Step 6: Data augmentation — make the dataset bigger",
+      body: "Another angle: if you have more varied training data, the model can't memorize it all — it's forced to learn general patterns. Data augmentation creates new training examples by applying transformations to existing ones.\n\nFor images: random flips, rotations, crops, color jitter, blur.\nFor text: synonym replacement, sentence rephrasing, back-translation.\nFor tabular: add small Gaussian noise to numeric features.\n\nAugmented examples look different enough that the model can't memorize them, but preserve the label so they're still correct training signal.",
+      whyItMatters: "More data is the single most effective cure for overfitting. Augmentation is cheap way to simulate having a larger dataset, especially useful when real labeled data is scarce.",
+      diagram: `graph TD
+  classDef orig fill:#dbeafe,stroke:#60a5fa,color:#1e3a8a
+  classDef aug fill:#ede9fe,stroke:#8b5cf6,color:#4c1d95
+  classDef dataset fill:#6366f1,stroke:#4f46e5,color:#fff
+
+  I[("📷 Original image\n🐱 cat")] --> A1["Flip horizontal\n🐱 cat (mirror)"]
+  I --> A2["Random crop\n🐱 cat (zoomed)"]
+  I --> A3["Color jitter\n🐱 cat (darker)"]
+  A1 & A2 & A3 --> DS[("Training dataset\n4× bigger — harder to memorize")]
+
+  class I orig
+  class A1,A2,A3 aug
+  class DS dataset`
+    },
+  ]}
+/>
+
+## Bias-Variance Tradeoff
+
+The tension between underfitting and overfitting has a formal name: the **bias-variance tradeoff**.
+
+<MermaidDiagram chart={`graph LR
+  classDef high fill:#fee2e2,stroke:#f87171,color:#7f1d1d
+  classDef low fill:#dcfce7,stroke:#4ade80,color:#14532d
+  classDef mid fill:#ede9fe,stroke:#8b5cf6,color:#4c1d95
+
+  SIMPLE["Simple model\n(few parameters)\n────────────────\nHigh bias\n→ misses real patterns\n→ underfitting"] --> SWEET["✅ Sweet spot\nbalanced complexity\n────────────────\nLow bias + low variance\n→ generalizes well"]
+  SWEET --> COMPLEX["Complex model\n(many parameters)\n────────────────\nHigh variance\n→ memorizes noise\n→ overfitting"]
+
+  class SIMPLE high
+  class SWEET low
+  class COMPLEX high`}
+/>
+
+- **Bias**: error from wrong assumptions — model too simple to capture the pattern
+- **Variance**: error from sensitivity to noise — model memorizes random quirks of training data
+- You can't eliminate both at once by just tweaking the model. You need more data, better regularization, or a better-suited architecture.
+
+<ConceptCheck
+  question="Your model achieves 99% accuracy on training data but only 67% on the validation set. What's the most likely problem, and name two techniques to fix it?"
+  answer="This is overfitting — the model has memorized the training set but hasn't learned generalizable patterns. Two fixes: (1) Dropout — add dropout layers to prevent the network from relying on specific neurons. (2) Early stopping — monitor validation accuracy and stop training when it peaks, restoring the best checkpoint."
+/>
+
+## Summary: Your Anti-Overfitting Checklist
+
+| Technique | When to use | Strength |
+|---|---|---|
+| Train/val/test split | Always | Prevents test leakage |
+| Loss curve monitoring | Always | Early warning system |
+| Early stopping | Most cases | Free, no downside |
+| L2 regularization (weight decay) | Most cases | Especially useful for large models |
+| Dropout | Deep networks | Computationally free ensemble |
+| Data augmentation | When data is limited | High impact, domain-specific |

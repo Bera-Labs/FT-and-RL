@@ -1,0 +1,224 @@
+import AnalogyCard from '@/components/interactive/AnalogyCard';
+import StepWalkthrough from '@/components/interactive/StepWalkthrough';
+import MermaidDiagram from '@/components/interactive/MermaidDiagram';
+import ConceptCheck from '@/components/interactive/ConceptCheck';
+
+<AnalogyCard
+  title="LEGO bricks snapped into layers"
+  body="Think of a neural network as a wall of LEGO bricks. Each brick does one small, dumb job: it takes some numbers in, multiplies them, adds them up, and passes a result onward. On its own, one brick is useless. But when you snap thousands of bricks together in layers — the first layer looking for edges, the next for shapes, the next for combinations of shapes — suddenly the whole wall can recognize a face, understand a sentence, or predict a stock price. The intelligence is not in any single brick; it emerges from how they're all connected."
+/>
+
+## What is a Neural Network?
+
+A neural network is a type of ML model loosely inspired by the human brain. It's made up of **neurons** organized in **layers**. Data flows in through the first layer, gets transformed at each layer, and a prediction comes out at the last layer.
+
+There are three types of layers:
+
+<MermaidDiagram chart={`graph LR
+  classDef inp fill:#dbeafe,stroke:#3b82f6,color:#1e3a8a
+  classDef hid fill:#ede9fe,stroke:#8b5cf6,color:#4c1d95
+  classDef out fill:#dcfce7,stroke:#16a34a,color:#14532d
+
+  subgraph in ["  Input Layer  "]
+    I1((x₁))
+    I2((x₂))
+  end
+  subgraph hl ["  Hidden Layer  "]
+    H1((h₁))
+    H2((h₂))
+    H3((h₃))
+  end
+  subgraph ol ["  Output Layer  "]
+    O((ŷ))
+  end
+
+  I1 --> H1 & H2 & H3
+  I2 --> H1 & H2 & H3
+  H1 & H2 & H3 --> O
+
+  class I1,I2 inp
+  class H1,H2,H3 hid
+  class O out`}
+/>
+
+- **Input layer**: receives the raw data (e.g., pixel values of an image, or word numbers in a sentence)
+- **Hidden layers**: transform the data step by step, extracting increasingly abstract features
+- **Output layer**: produces the final prediction (e.g., "cat" or "dog", or a probability)
+
+## Inside a Single Neuron
+
+Every neuron does the same three things:
+
+<StepWalkthrough
+  steps={[
+    {
+      title: "Step 1: Receive inputs",
+      body: "Each neuron receives numbers from the neurons in the previous layer (or from the raw data in the case of the first layer). These numbers represent features — things the previous layer detected or computed. For a simple example, imagine a neuron in an image classifier receiving the brightness values of a few pixels.",
+      whyItMatters: "Neurons don't 'think' — they just process numbers. The intelligence comes from how many neurons there are and how they're connected, not from any single one.",
+      diagram: `graph LR
+  classDef inp fill:#dbeafe,stroke:#60a5fa,color:#1e3a8a
+  classDef neuron fill:#6366f1,stroke:#4f46e5,color:#fff
+
+  x1["x₁ = 0.8\npixel brightness"] --> N((Neuron))
+  x2["x₂ = 0.3\nedge strength"] --> N
+  x3["x₃ = 0.5\ncolor value"] --> N
+
+  class x1,x2,x3 inp
+  class N neuron`
+    },
+    {
+      title: "Step 2: Multiply by weights (and add a bias)",
+      body: "Each connection has a weight — a number that says 'how important is this input?'. The neuron multiplies each input by its weight, then adds them all up, plus a bias (a constant offset, like adjusting where 0 is on a scale). This single number is called the pre-activation value.\n\nFormula: z = w₁x₁ + w₂x₂ + w₃x₃ + b",
+      whyItMatters: "Weights are what get learned during training. High weight = this input matters a lot. Near-zero weight = this input is mostly ignored. Training finds the weights that make the network's predictions accurate.",
+      diagram: `graph LR
+  classDef inp fill:#dbeafe,stroke:#60a5fa,color:#1e3a8a
+  classDef sum fill:#6366f1,stroke:#4f46e5,color:#fff
+
+  x1["x₁ = 0.8"] --"w₁ = 0.5"--> S
+  x2["x₂ = 0.3"] --"w₂ = 0.3"--> S
+  x3["x₃ = 0.5"] --"w₃ = 0.3"--> S
+  S["z = Σ(wᵢxᵢ) + b\n= 0.40 + 0.09 + 0.15 + 0.1\nz = 0.74"]
+
+  class x1,x2,x3 inp
+  class S sum`
+    },
+    {
+      title: "Step 3: Apply an activation function",
+      body: "After computing z, the neuron passes it through an activation function. The most common one is ReLU (Rectified Linear Unit): if z > 0, output z; otherwise output 0. This introduces non-linearity — without it, a 100-layer network would behave exactly like a single layer, no matter how deep it is.",
+      whyItMatters: "Non-linearity is what allows neural networks to model complex, real-world relationships. A network without activation functions can only learn straight-line (linear) patterns — useless for most real problems.",
+      diagram: `graph LR
+  classDef pos fill:#dcfce7,stroke:#4ade80,color:#14532d
+  classDef neg fill:#fee2e2,stroke:#f87171,color:#7f1d1d
+  classDef fn fill:#6366f1,stroke:#4f46e5,color:#fff
+  classDef zero fill:#f1f5f9,stroke:#94a3b8,color:#64748b
+
+  A["z = +0.74"] --> R1["ReLU\nmax(0, z)"]
+  R1 --> B["output = 0.74 ✓\npasses through"]
+  C["z = −0.30"] --> R2["ReLU\nmax(0, z)"]
+  R2 --> D["output = 0\nblocked ✗"]
+
+  class A,B pos
+  class C,D neg
+  class R1,R2 fn`
+    },
+    {
+      title: "Step 4: Pass the output forward",
+      body: "The neuron's output becomes an input to every neuron in the next layer. This cascade continues layer by layer until we reach the output layer. In a classification network, the final layer uses a softmax function to convert raw numbers into probabilities that add up to 1 (e.g., 85% cat, 12% dog, 3% rabbit).",
+      whyItMatters: "This 'forward pass' is how the network makes a prediction. Training involves doing this forward pass millions of times with different inputs and adjusting the weights each time.",
+      diagram: `graph LR
+  classDef data fill:#dbeafe,stroke:#60a5fa,color:#1e3a8a
+  classDef l1 fill:#ede9fe,stroke:#8b5cf6,color:#4c1d95
+  classDef l2 fill:#c4b5fd,stroke:#7c3aed,color:#3b0764
+  classDef l3 fill:#7c3aed,stroke:#5b21b6,color:#fff
+  classDef out fill:#dcfce7,stroke:#16a34a,color:#14532d
+
+  Img(["📷 Image"]) --> L1["Layer 1\nedges & lines"]
+  L1 --> L2["Layer 2\nshapes & curves"]
+  L2 --> L3["Layer 3\nparts & objects"]
+  L3 --> Out["🐱 cat: 85%\n🐶 dog: 12%\n🐇 rabbit: 3%"]
+
+  class Img data
+  class L1 l1
+  class L2 l2
+  class L3 l3
+  class Out out`
+    },
+  ]}
+/>
+
+## Why Layers?
+
+Each layer learns to detect increasingly abstract concepts. In an image recognition network:
+
+<MermaidDiagram chart={`graph LR
+  classDef raw fill:#f1f5f9,stroke:#94a3b8,color:#475569
+  classDef l1 fill:#dbeafe,stroke:#3b82f6,color:#1e3a8a
+  classDef l2 fill:#ede9fe,stroke:#8b5cf6,color:#4c1d95
+  classDef l3 fill:#7c3aed,stroke:#5b21b6,color:#fff
+  classDef out fill:#dcfce7,stroke:#16a34a,color:#14532d
+
+  Raw["📊 Raw pixels\n0 – 255 per channel"] --> L1["Layer 1\nEdges & gradients"]
+  L1 --> L2["Layer 2\nCorners & curves"]
+  L2 --> L3["Layer 3\nEyes · noses · ears"]
+  L3 --> Out["✅ Face detected\n(97% confidence)"]
+
+  class Raw raw
+  class L1 l1
+  class L2 l2
+  class L3 l3
+  class Out out`}
+/>
+
+The deeper the network (more layers), the more complex the concepts it can represent. This is why large language models like GPT have dozens to hundreds of layers.
+
+## Deep vs. Shallow Networks
+
+<MermaidDiagram chart={`graph LR
+  classDef shallow fill:#fef9c3,stroke:#ca8a04,color:#713f12
+  classDef deep fill:#dcfce7,stroke:#16a34a,color:#14532d
+
+  S["🏠 Shallow  ·  1–2 hidden layers\n────────────────────────────\nPros: fast to train, less data needed\nCons: limited to simple patterns\nExample: house price prediction"]
+  D["🧠 Deep  ·  many hidden layers\n────────────────────────────\nPros: learns very complex patterns\nCons: needs more data and compute\nExample: GPT · image classifiers"]
+
+  class S shallow
+  class D deep`}
+/>
+
+More layers generally means more capacity to learn, but also:
+- More data needed to train properly
+- Longer training time
+- Risk of overfitting (more on this in Chapter 5)
+
+<ConceptCheck
+  question="A neural network processes an image of a cat. In which layer would you expect the network to detect the presence of 'whiskers'?"
+  answer="A middle/later hidden layer. The earliest layers detect simple, low-level features like edges and gradients. Recognizing 'whiskers' requires combining multiple edges into a specific pattern — that kind of high-level detection happens in deeper layers that build on what the earlier layers found."
+/>
+
+## How Many Neurons and Layers?
+
+This is one of the big design decisions in ML, and there's no perfect formula. Common starting points:
+
+- **Layers**: 2–4 for simple tabular data; dozens to hundreds for images or language
+- **Neurons per layer**: 64–512 is common for hidden layers; varies a lot by task
+- **Output neurons**: one per class (e.g., 1000 output neurons for ImageNet's 1000 categories)
+
+For the large pre-trained models we'll use in fine-tuning (like GPT or BERT), these decisions have already been made by the model's creators. You inherit their architecture.
+
+## Activation Functions: The Choices Matter
+
+ReLU is the simplest activation function but not the only one. The choice of activation meaningfully affects what a network can learn and how well it trains. Here are the functions you'll encounter most often:
+
+<MermaidDiagram chart={`graph TD
+  classDef relu fill:#dbeafe,stroke:#60a5fa,color:#1e3a8a
+  classDef gelu fill:#dcfce7,stroke:#4ade80,color:#14532d
+  classDef sig fill:#ede9fe,stroke:#8b5cf6,color:#4c1d95
+  classDef soft fill:#fef3c7,stroke:#f59e0b,color:#78350f
+
+  RELU["ReLU  max(0, x)\n────────────────\n✓ Fast, simple\n✓ Works well in practice\n✗ 'Dying ReLU': z<0 → zero gradient\nUsed in: classic CNNs, simple MLPs"]
+  GELU["GeLU  x · Φ(x)\n────────────────\n✓ Smooth, probabilistic gating\n✓ Small negative values still pass\n✗ Slightly slower to compute\nUsed in: BERT, GPT, all modern LLMs"]
+  SIG["Sigmoid  1/(1+e⁻ˣ)\n────────────────\n✓ Output ∈ (0,1) — readable as probability\n✗ Saturates near 0 and 1 → kills gradients\nUsed in: binary output neurons, gates in LSTMs"]
+  SOFT["Softmax  eˣⁱ / Σeˣʲ\n────────────────\n✓ Multi-class probabilities that sum to 1\n✗ Not used in hidden layers (only output)\nUsed in: final layer of classifiers, attention scores"]
+
+  class RELU relu
+  class GELU gelu
+  class SIG sig
+  class SOFT soft`}
+/>
+
+**Why GeLU matters for this course:** Every Transformer-based LLM you'll work with in Parts 2–4 uses GeLU (or its variant SiLU) in its feed-forward layers instead of ReLU. GeLU applies a smooth, probabilistic gate — unlike ReLU's hard cutoff at zero, GeLU allows small negative values to partially pass through. This smoother gradient landscape helps large models train more stably.
+
+The formula: GeLU(x) = x × Φ(x), where Φ(x) is the standard normal cumulative distribution function. In practice, a fast approximation is used: GeLU(x) ≈ 0.5x(1 + tanh(√(2/π)(x + 0.044715x³))).
+
+## Layer Normalization: Keeping Activations Stable
+
+One more building block you'll see constantly in LLMs: **Layer Normalization**. After the activation function in each layer, modern networks apply layer norm to keep values from growing out of control.
+
+Layer Norm computes the mean and variance of a single token's representation across its dimensions, then normalizes:
+```
+y = (x − μ) / (σ + ε) × γ + β
+```
+where γ and β are learnable parameters (scale and shift).
+
+This is different from Batch Normalization (which normalizes across the batch dimension). Transformers use Layer Norm because it works on single sequences without needing batch statistics — important for variable-length text.
+
+**Why it matters:** Without normalization, activations in deep networks drift to very large or very small values as the signal passes through many layers. Layer Norm keeps activations in a healthy range, which makes gradients flow better and training more stable. You'll see `layer_norm` mentioned throughout the chapters on Transformers and fine-tuning — this is what it is.

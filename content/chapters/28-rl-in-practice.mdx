@@ -1,0 +1,169 @@
+import AnalogyCard from '@/components/interactive/AnalogyCard';
+import StepWalkthrough from '@/components/interactive/StepWalkthrough';
+import MermaidDiagram from '@/components/interactive/MermaidDiagram';
+import ConceptCheck from '@/components/interactive/ConceptCheck';
+
+<AnalogyCard
+  title="Why your agent keeps falling off the platform"
+  body="You've studied the theory, implemented the algorithm, started training — and your agent walks straight off the edge of the platform every time. Or it learns to stand perfectly still to avoid penalties. Or it finds a way to score points by exploiting a physics glitch you never intended. RL is notoriously difficult to debug because failures can come from a dozen different sources: bad reward design, wrong hyperparameters, implementation bugs, numerical instability, or the environment itself being harder than expected. This chapter is the practical companion to the RL theory — the hard-won lessons about what actually goes wrong and how to fix it."
+/>
+
+## Why RL Is Hard in Practice
+
+RL has several properties that make debugging difficult:
+
+<MermaidDiagram chart={`graph TD
+  classDef hard fill:#fee2e2,stroke:#f87171,color:#7f1d1d
+  classDef sl fill:#dcfce7,stroke:#4ade80,color:#14532d
+
+  H1["High variance\nSame algorithm, different random seed\n→ very different results"] --> HARD
+  H2["Slow feedback\nMight not know if it's working\nfor millions of steps"] --> HARD
+  H3["Reward hacking\nAgent finds unexpected ways\nto maximize reward"] --> HARD
+  H4["Training instability\nWorks for 100k steps\nthen suddenly diverges"] --> HARD
+  H5["Silent failures\nMetrics look fine but\nbehavior is wrong"] --> HARD
+  HARD["RL is genuinely hard\nExpect more debugging\nthan supervised learning"]
+
+  class H1,H2,H3,H4,H5 hard`}
+/>
+
+<StepWalkthrough
+  steps={[
+    {
+      title: "Problem 1: Reward hacking and misspecified objectives",
+      body: "Reward hacking occurs when the agent finds a way to achieve a high reward that violates the intent of the reward function.\n\nClassic examples:\n• OpenAI boat racing game: agent learned to drive in circles hitting boost pads instead of finishing the race — got a higher score\n• Grabbing simulator: gripper learned to flip the table so objects fell in its hand\n• Loot collection game: agent learned to get trapped in a corner collecting the same low-value item forever instead of exploring\n\nDiagnosis: watch the agent's actual behavior, not just the reward curve. If the reward is rising but the behavior looks wrong, you have a reward hacking problem.\n\nFix: tighten the reward specification. Add constraints. Use a richer reward model that's harder to hack.",
+      whyItMatters: "Reward hacking is not just a game problem — it's the central concern in LLM alignment. If the reward model (trained on human preferences) can be 'hacked' by a language model, the model will produce responses that score highly on the reward model while being useless or harmful to actual humans.",
+      diagram: `graph LR
+  classDef intent fill:#dcfce7,stroke:#4ade80,color:#14532d
+  classDef hack fill:#fee2e2,stroke:#f87171,color:#7f1d1d
+
+  INTENT["Intended behavior\n'Finish the race fast'\n(high reward for completing laps)"] --> AGENT
+  AGENT{"Agent finds\nreward loophole"} --> HACK["Actual behavior\n'Circle boost pads forever'\n(higher reward than finishing!)"]
+  HACK --> FIX["Fix: reward should require\ncompleting 3 full laps\nnot just total score"]
+
+  class INTENT intent
+  class HACK hack`
+    },
+    {
+      title: "Problem 2: Sparse rewards — the agent learns nothing",
+      body: "Sparse reward environments give feedback only rarely — for example, only when the agent wins or loses. The agent may take thousands of random actions without ever receiving a signal.\n\nSymptoms:\n• Reward stays at 0 (or the minimum) for many training steps\n• Policy doesn't improve after millions of steps\n• Agent seems to wander randomly\n\nFixes:\n• Reward shaping: add small intermediate rewards for progress toward the goal (reach room 1: +0.1, reach room 2: +0.2, reach goal: +10)\n• Potential-based shaping: F(s,s') = γΦ(s') − Φ(s) where Φ is a potential function (doesn't change optimal policy)\n• Curriculum learning: start with an easier version of the environment that provides more feedback, then gradually make it harder",
+      whyItMatters: "Sparse rewards are the most common cause of 'RL doesn't learn anything.' If you're not seeing improvement after the first few percent of training, check whether the reward is actually being triggered. Add logging to count reward events per episode.",
+      diagram: `graph LR
+  classDef sparse fill:#fee2e2,stroke:#f87171,color:#7f1d1d
+  classDef dense fill:#dcfce7,stroke:#4ade80,color:#14532d
+
+  S["Sparse reward\n0, 0, 0, ..., 0, +10 (episode end)\nAgent: 10,000 steps with no signal\nLearning: none"] --> FIX
+  D["Shaped reward\n+0.1 (enter room 1)\n+0.2 (enter room 2)\n+0.5 (pick up key)\n+10 (open door)\nLearning: fast and steady"] --> FIX
+  FIX["Dense reward → much faster learning\nbut must ensure shaped reward\n= true goal reward + constant"]
+
+  class S sparse
+  class D dense`
+    },
+    {
+      title: "Problem 3: Training instability — diverging reward or loss",
+      body: "RL training can suddenly diverge after seeming to work. Common causes:\n\n• Learning rate too high: gradient updates too large, weights blow up\n• Policy ratio too large (in PPO): clip_range too wide, policy changes too much per update\n• Value function instability: critic diverges, providing wrong advantages, which corrupts policy\n• Gradient explosion: large gradients in recurrent networks or long sequences\n\nFixes:\n• Gradient clipping (max norm = 0.5 for RL, stricter than supervised learning)\n• Smaller learning rate (reduce by 5–10× and restart)\n• Smaller clip_range in PPO (0.1 instead of 0.2)\n• More frequent target network updates\n• Check for NaN losses immediately — nan usually indicates a learning rate that's far too high",
+      whyItMatters: "RL instability is harder to diagnose than supervised learning instability because the training signal keeps changing (new policies generate different data). Always log: policy loss, value loss, entropy, KL divergence, and mean reward per episode. A sudden spike in KL divergence often predicts instability before the reward crashes.",
+      diagram: `graph LR
+  classDef stable fill:#dcfce7,stroke:#4ade80,color:#14532d
+  classDef unstable fill:#fee2e2,stroke:#f87171,color:#7f1d1d
+  classDef fix fill:#fef3c7,stroke:#f59e0b,color:#78350f
+
+  STABLE["Stable training\nReward: smooth increase\nPolicy loss: gradual decrease\nKL: < 0.05 per update\nValue loss: decreasing"] --> SIGN
+  UNSTABLE["Instability signs ⚠️\nReward: sudden drop/NaN\nPolicy loss: large spike\nKL: > 0.1 per update\nValue loss: diverging"] --> SIGN
+  SIGN["→ Immediately:\nHalve learning rate\nAdd gradient clipping\nReduce clip_range\nRestart from last stable checkpoint"]
+
+  class STABLE stable
+  class UNSTABLE unstable
+  class SIGN fix`
+    },
+    {
+      title: "Problem 4: The agent stops exploring",
+      body: "Sometimes the agent quickly finds a mediocre strategy and stops exploring — it gets stuck in a local optimum.\n\nSymptoms:\n• Policy entropy drops very quickly (policy becomes deterministic early)\n• Agent always does the same thing regardless of state variations\n• Reward plateaus at a suboptimal level early in training\n\nFixes:\n• Entropy bonus: add −β × H(π) to the PPO objective (Chapter 26). Forces the policy to maintain some diversity.\n• Decrease ε faster in ε-greedy (keep more exploration for longer)\n• Random network distillation bonus: reward the agent for visiting novel states\n• Curriculum learning: introduce harder variations that require exploring new strategies",
+      whyItMatters: "Premature policy collapse is especially common when the reward function provides a clear but suboptimal path early in training. The agent finds this path, exploits it, and the entropy bonus shrinks — it never tries the harder path that leads to the true optimal strategy.",
+      diagram: `graph LR
+  classDef entropy fill:#fef3c7,stroke:#f59e0b,color:#78350f
+  classDef low fill:#fee2e2,stroke:#f87171,color:#7f1d1d
+  classDef fix fill:#dcfce7,stroke:#4ade80,color:#14532d
+
+  EARLY["Early training\nEntropy = 2.8 (diverse policy)\nAgent explores many strategies"] --> DROP
+  DROP["Entropy drops to 0.1\nPolicy becomes near-deterministic\n(always takes 1–2 actions)\nReward plateaus at suboptimal level"] --> FIX
+  FIX["Fix: entropy coefficient β = 0.05\nAdds H(π) bonus to objective\nPrevents premature determinism"]
+
+  class EARLY entropy
+  class DROP low
+  class FIX fix`
+    },
+    {
+      title: "Problem 5: Credit assignment in long episodes",
+      body: "In long episodes, figuring out which actions caused the eventual reward is difficult — this is the credit assignment problem.\n\nExample: a language model generates a 500-token response. Only the final response gets a reward. Which of the 500 token choices was responsible for the high or low score?\n\nApproaches:\n• Discount factor γ: actions near the end are weighted more heavily. For LLMs where the whole response matters equally, use γ ≈ 1.0\n• Dense intermediate rewards: add smaller rewards during the episode (e.g., mid-response quality score)\n• Value function: the critic estimates credit implicitly via the advantage function\n• Token-level rewards: instead of one reward per response, score individual sentences or paragraphs",
+      whyItMatters: "Credit assignment is why RLHF for LLMs is challenging. A reward model scores the whole response, but the model generated 500 tokens. PPO handles this by treating each token choice as an action with its own advantage — the value function bootstraps credit even without per-token rewards.",
+      diagram: `graph LR
+  classDef action fill:#ede9fe,stroke:#8b5cf6,color:#4c1d95
+  classDef reward fill:#dcfce7,stroke:#4ade80,color:#14532d
+  classDef question fill:#fef3c7,stroke:#f59e0b,color:#78350f
+
+  T1["Token 1: 'The'"] --> T2["Token 2: 'answer'"]
+  T2 --> T3["Token 3: 'is'"]
+  T3 --> TN["... 497 more tokens ..."]
+  TN --> END["Reward = 4.5\n(at end of full response)"]
+  END --> CREDIT["Credit assignment:\nWhich of 500 tokens earned the 4.5?\nPPO + value function distributes\ncredit backwards through episode"]
+
+  class T1,T2,T3,TN action
+  class END reward
+  class CREDIT question`
+    },
+    {
+      title: "Problem 7: Reward scale — training is unstable or slow to learn",
+      body: "RL algorithms are sensitive to the magnitude of rewards. If rewards vary wildly (−1000 to +1000), gradient updates will be enormous and training will diverge. If rewards are always positive (0 to +10), the agent never receives a strong signal that an action was bad relative to the average — every action looks like a win.\n\nReward normalization fixes both problems:\n• Per-batch normalization: subtract the batch mean, divide by batch std\n  r_norm = (r − μ_batch) / (σ_batch + ε)\n• Running statistics: track exponential moving average of mean/std across episodes\n• Reward clipping: clip extreme values (e.g. to [−10, +10]) to prevent outliers dominating\n\nIn RLHF: reward model scores are typically whitened (normalized to zero-mean, unit-variance) before the PPO update. This is the default in TRL and OpenRLHF.",
+      whyItMatters: "Reward normalization is one of the most consistently impactful RL stability tricks. If your training run diverges with NaN losses or oscillates wildly, and you haven't normalized rewards, try that first. The cost is near-zero; the benefit is often the difference between a run that converges and one that doesn't.",
+      diagram: `graph LR
+  classDef bad fill:#fee2e2,stroke:#f87171,color:#7f1d1d
+  classDef fix fill:#fef3c7,stroke:#f59e0b,color:#78350f
+  classDef good fill:#dcfce7,stroke:#4ade80,color:#14532d
+
+  RAW["Raw rewards (unstable)\nEp 1: +450 · Ep 2: −230 · Ep 3: +680\nHigh variance → large gradient updates\n→ training instability / divergence"]
+  HOW["Normalize per batch:\nr_norm = (r − μ) / (σ + 1e-8)\nμ = 300, σ = 380 for this batch"]
+  NORM["Normalized rewards (stable)\nEp 1: +0.4 · Ep 2: −1.4 · Ep 3: +1.0\nMean ≈ 0 · Std ≈ 1 · Stable gradients"]
+
+  RAW --> HOW --> NORM
+
+  class RAW bad
+  class HOW fix
+  class NORM good`
+    },
+    {
+      title: "Problem 6: Evaluation and comparison",
+      body: "RL results are harder to evaluate and compare than supervised learning:\n\n• High variance: the same setup with different random seeds can produce very different results. Always run 3–5 seeds and report mean ± std.\n• Learning curves vs. final performance: a faster-learning algorithm might still be beaten eventually by a slower one. Report both.\n• Wall-clock time vs. environment steps: an algorithm that needs 10× less environment interaction but runs 10× slower might be equivalent or worse in practice.\n• Evaluation policy: evaluate with ε=0 (pure exploitation) to measure learned policy quality; train with ε=0.1. Don't evaluate with ε=0.1 — the random actions inflate variance.\n\nFor LLM RLHF: automated reward model score is fast but imperfect. Human evaluation is expensive but authoritative.",
+      whyItMatters: "Reporting RL results with a single seed is not reproducible science. Variance across seeds can be as large as the improvement you're claiming. Always use multiple seeds — in LLM RLHF, multiple training runs with different random seeds and report the range.",
+      diagram: `graph TD
+  classDef wrong fill:#fee2e2,stroke:#f87171,color:#7f1d1d
+  classDef right fill:#dcfce7,stroke:#4ade80,color:#14532d
+
+  WRONG["❌ Single seed result\n'Algorithm A achieves reward 450'\n(might be lucky seed)"] --> RIGHT
+  RIGHT["✅ Multiple seeds (n=5)\n'Algorithm A: 430 ± 45 (mean ± std)'\n(reproducible, trustworthy)"]
+  WRONG2["❌ Training curve evaluation\n(evaluating with exploration ε=0.1)"] --> RIGHT2
+  RIGHT2["✅ Separate eval episodes\n(ε=0, pure exploitation)"]
+
+  class WRONG,WRONG2 wrong
+  class RIGHT,RIGHT2 right`
+    },
+  ]}
+/>
+
+<ConceptCheck
+  question="Your PPO agent trains on a game for 500,000 steps. Reward rises steadily to +120 by step 200,000, then suddenly drops to +30 and oscillates around there for the remaining 300,000 steps. What are the two most likely causes, and what would you check first?"
+  answer="The two most likely causes are: (1) Policy instability — a batch of data caused an update that pushed the policy too far, collapsing previously-learned behavior. Check: the KL divergence between old and new policy at the point of the drop. If KL > 0.1, reduce clip_range or learning rate. (2) Reward hacking reversal — the agent found a 'shortcut' that stopped working (e.g., environment was non-stationary or a glitch was patched). Check: log the actual agent behavior at both the peak and after the drop. I'd check the KL divergence first because instability is more common and easier to diagnose — sudden loss of policy is usually visible in the metrics log."
+/>
+
+## Practical RL Checklist
+
+<MermaidDiagram chart={`graph TD
+  classDef check fill:#6366f1,stroke:#4f46e5,color:#fff
+  classDef green fill:#dcfce7,stroke:#4ade80,color:#14532d
+  classDef warn fill:#fef3c7,stroke:#f59e0b,color:#78350f
+
+  C1["Before training:\n✓ Log env step that triggers reward\n✓ Print first episode's transitions\n✓ Verify reward scales (-1 to 1)\n✓ Set random seed for reproducibility"] --> C2["During training:\n✓ Monitor: reward, entropy, KL, value loss\n✓ Watch actual behavior (not just metrics)\n✓ Check for NaN every 1000 steps\n✓ Save checkpoints frequently"]
+  C2 --> C3["If not learning:\n→ Is reward actually triggering?\n→ Is learning rate appropriate?\n→ Is episode length reasonable?\n→ Is the task too hard? (curriculum)"]
+  C3 --> C4["After training:\n✓ Evaluate with 5+ seeds\n✓ Test edge cases manually\n✓ Compare to baseline (random policy)\n✓ Check for reward hacking"]
+
+  class C1,C2,C3,C4 check`}
+/>

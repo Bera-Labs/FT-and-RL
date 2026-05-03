@@ -1,0 +1,156 @@
+import AnalogyCard from '@/components/interactive/AnalogyCard';
+import StepWalkthrough from '@/components/interactive/StepWalkthrough';
+import MermaidDiagram from '@/components/interactive/MermaidDiagram';
+import ConceptCheck from '@/components/interactive/ConceptCheck';
+
+<AnalogyCard
+  title="Building a GPS that learns which roads are fastest"
+  body="Imagine you're exploring a new city and building your own GPS from scratch. At first you have no map — you just try roads randomly. Whenever you reach your destination fast, you remember the route was good. Whenever you hit traffic, you remember that route was bad. Over hundreds of trips, you build up a table: 'at this intersection, turn left; at that one, go straight.' Each entry in your table is your best estimate of how good that choice is. You update the table every time you try a road and discover whether it was better or worse than you expected. This is exactly Q-learning: building a table of (state, action) values that get refined with every experience."
+/>
+
+## Q-Learning: The Foundational Algorithm
+
+Q-learning (Watkins, 1989) is one of the most important algorithms in RL. It directly estimates the Q-function — the value of taking action a in state s — from experience, without needing to know the environment's transition probabilities.
+
+<MermaidDiagram chart={`graph LR
+  classDef known fill:#dbeafe,stroke:#60a5fa,color:#1e3a8a
+  classDef learn fill:#dcfce7,stroke:#4ade80,color:#14532d
+  classDef algo fill:#6366f1,stroke:#4f46e5,color:#fff
+
+  EXP["Experience\n(s, a, r, s')\nsampled by playing"] --> QLEARN["Q-Learning\nupdate rule"]
+  QLEARN --> QTABLE["Q-table\nQ(s,a) for all state-action pairs\ngets better with every experience"]
+  QTABLE --> POLICY["Policy\nπ(s) = argmax_a Q(s,a)"]
+
+  class EXP known
+  class QLEARN algo
+  class QTABLE,POLICY learn`}
+/>
+
+<StepWalkthrough
+  steps={[
+    {
+      title: "Step 1: The Q-table",
+      body: "In Q-learning, the Q-function is stored as a table: one row per state, one column per action. Each cell Q(s, a) contains our current estimate of 'the total discounted reward we'll get if we take action a in state s, then follow the optimal policy from there.'\n\nAt the start, all Q values are initialized to 0 (or random small values).\n\nExample: a 4×4 grid with 16 states and 4 actions (up/down/left/right) requires a 16×4 Q-table with 64 entries.\n\nThe agent interacts with the environment, collects (s, a, r, s') tuples, and updates the Q-table entry for (s, a) based on what it observed.",
+      whyItMatters: "A Q-table is the simplest possible representation of a value function — just a lookup table. It works perfectly for small state and action spaces. For large or continuous spaces, the table becomes infeasibly large, which is why we replace it with a neural network in DQN (Chapter 24).",
+      diagram: `graph TD
+  classDef state fill:#dbeafe,stroke:#60a5fa,color:#1e3a8a
+  classDef qval fill:#6366f1,stroke:#4f46e5,color:#fff
+  classDef best fill:#dcfce7,stroke:#4ade80,color:#14532d
+
+  HEADER["Q-Table: Q(state, action)"] --> ROW1["State 1 (at start)\n  Up: 0.0\n  Down: 0.0\n  Left: 0.0\n  Right: 0.0\n  (initialized to 0)"]
+  HEADER --> ROW5["State 5 (after 1000 steps)\n  Up: 1.2\n  Down: 0.3\n  Left: −0.5\n  Right: 2.8 ← best\n  (learned from experience)"]
+
+  class ROW1 state
+  class ROW5 qval`
+    },
+    {
+      title: "Step 2: The Q-learning update rule",
+      body: "After taking action a in state s and observing reward r and new state s', we update Q(s, a):\n\nQ(s, a) ← Q(s, a) + α × [r + γ × max_{a'} Q(s', a') − Q(s, a)]\n\nBreaking this down:\n• r + γ × max Q(s', a'): the target — what Q(s,a) should be (immediate reward + best future value)\n• Q(s, a): our current estimate\n• r + γ × max Q(s', a') − Q(s, a): the TD error — the gap between target and estimate\n• α (learning rate): how much to update (0.1–0.5 typical)\n\nThis is the Bellman equation used as an update rule: nudge our estimate toward the target by a small step α.",
+      whyItMatters: "The TD (Temporal Difference) error is the key signal in Q-learning. Positive TD error means 'this was better than expected' — increase Q. Negative TD error means 'this was worse than expected' — decrease Q. Over thousands of updates, Q converges to the true optimal values.",
+      diagram: `graph LR
+  classDef formula fill:#6366f1,stroke:#4f46e5,color:#fff
+  classDef target fill:#dcfce7,stroke:#4ade80,color:#14532d
+  classDef error fill:#fef3c7,stroke:#f59e0b,color:#78350f
+  classDef old fill:#dbeafe,stroke:#60a5fa,color:#1e3a8a
+
+  CURR["Current Q(s,a) = 1.5"] --> ERR
+  TARGET["Target = r + γ × max Q(s',a')\n= 0.5 + 0.9 × 2.0\n= 2.3"] --> ERR
+  ERR["TD error = 2.3 − 1.5 = +0.8\n(was better than expected)"]
+  ERR --> NEW["New Q(s,a) = 1.5 + 0.1 × 0.8\n= 1.58\n(nudged toward target)"]
+
+  class CURR old
+  class TARGET target
+  class ERR error
+  class NEW target`
+    },
+    {
+      title: "Step 3: Off-policy learning — the Q-learning advantage",
+      body: "Q-learning is an off-policy algorithm. This means the policy used to collect experience (behavior policy, e.g., ε-greedy) is different from the policy being learned (target policy, the optimal greedy policy).\n\nWhy this matters: experience from any policy can update Q. You can learn from old experiences, from human demonstrations, from a random policy — it all improves your Q-table.\n\nCompare with on-policy methods (like SARSA): on-policy algorithms update Q toward the action actually taken, not the best action. This means they can only learn from their own current behavior.\n\nOff-policy = can learn from any experience. On-policy = can only learn from current policy's experience.",
+      whyItMatters: "Off-policy learning enables experience replay (Chapter 24): store experiences in a buffer and randomly sample from them repeatedly to train. This dramatically improves sample efficiency — one experience can be used many times for multiple Q-updates.",
+      diagram: `graph LR
+  classDef off fill:#dcfce7,stroke:#4ade80,color:#14532d
+  classDef on fill:#fef3c7,stroke:#f59e0b,color:#78350f
+
+  OFF["Q-Learning (off-policy)\n──────────────────────\nBehavior policy: ε-greedy\nTarget policy: greedy (argmax Q)\nUpdate: toward max Q(s',a')\n✓ Can reuse old experiences\n✓ Works with any exploration"]
+  ON["SARSA (on-policy)\n──────────────────────\nBehavior policy: ε-greedy\nTarget policy: ε-greedy (same)\nUpdate: toward Q(s', a_actual)\n→ Learns the policy it follows\n→ More cautious in risky situations"]
+
+  class OFF off
+  class ON on`
+    },
+    {
+      title: "Step 4: A complete Q-learning walkthrough",
+      body: "Let's trace Q-learning on a simple grid: agent starts at (0,0), goal at (3,3), reward +10 at goal, −1 per step.\n\nStep 1: At state (0,0), ε-greedy picks 'right' (random, ε=0.9 initially)\nStep 2: New state: (1,0), reward: −1\nStep 3: Update Q((0,0), right):\n  = Q((0,0),right) + 0.1 × [−1 + 0.9 × max Q((1,0), ·) − Q((0,0),right)]\n  = 0 + 0.1 × [−1 + 0.9 × 0 − 0] = −0.1\n\nAfter 10,000 steps, the Q-table converges. The optimal path emerges: right→right→right→up→up→up→... ",
+      whyItMatters: "Each update is tiny (-0.1) but correct. After thousands of steps, the negative penalties for suboptimal paths accumulate and the Q-values accurately reflect the shortest path. The key insight: you don't need to reason about the whole problem — just make local updates that collectively produce global optima.",
+      diagram: `graph LR
+  classDef pos fill:#dcfce7,stroke:#4ade80,color:#14532d
+  classDef neg fill:#fee2e2,stroke:#f87171,color:#7f1d1d
+  classDef goal fill:#6366f1,stroke:#4f46e5,color:#fff
+
+  START["(0,0)\nStart"] --> R1["(1,0)\nr=−1"] --> R2["(2,0)\nr=−1"] --> R3["(3,0)\nr=−1"]
+  R3 --> U1["(3,1)\nr=−1"] --> U2["(3,2)\nr=−1"] --> GOAL["(3,3)\nr=+10\n✅ GOAL"]
+
+  class START,R1,R2,R3,U1,U2 neg
+  class GOAL goal`
+    },
+    {
+      title: "Step 5: Convergence and limitations",
+      body: "Q-learning provably converges to the optimal Q-function given:\n• Every (state, action) pair is visited infinitely often (guaranteed by ε-greedy with ε > 0)\n• The learning rate α decays appropriately\n\nLimitations:\n• Tabular Q-learning only works for small, discrete state/action spaces. A video game with 84×84×4 = 28,000 pixel values has more possible states than atoms in the observable universe — no table can store them.\n• Requires many samples to converge — each Q(s,a) must be updated many times\n• Doesn't generalize: learning Q(s,a) tells you nothing about Q(s', a) for a similar state s'",
+      whyItMatters: "Understanding tabular Q-learning's limitations directly motivates DQN (Chapter 24). DQN replaces the table with a neural network that can generalize across similar states — giving us Q-learning that works at scale.",
+      diagram: `graph LR
+  classDef small fill:#dcfce7,stroke:#4ade80,color:#14532d
+  classDef large fill:#fee2e2,stroke:#f87171,color:#7f1d1d
+  classDef fix fill:#ede9fe,stroke:#8b5cf6,color:#4c1d95
+
+  SMALL["Small discrete spaces\n──────────────────\n16-state grid world ✅\n100 states × 4 actions ✅\nTabular Q-learning works\nTable has <1000 entries"] --> FAILS
+  LARGE["Large / continuous spaces\n──────────────────\nAtari pixels: 10^28000 states ❌\nRobotics: continuous ❌\nLanguage: 50k vocabulary ❌\nTable is infeasibly large"] --> FAILS
+  FAILS["Tabular Q-learning fails\n↓\nSolution: replace table\nwith neural network"] --> DQN["→ DQN (Chapter 24)"]
+
+  class SMALL small
+  class LARGE large
+  class DQN fix`
+    },
+    {
+      title: "Step 6: SARSA — the on-policy alternative",
+      body: "SARSA (State-Action-Reward-State-Action) is the on-policy cousin of Q-learning:\n\nQ(s, a) ← Q(s, a) + α × [r + γ × Q(s', a') − Q(s, a)]\n\nThe key difference: Q-learning updates toward max_a Q(s', a') (the best action). SARSA updates toward Q(s', a') where a' is the action actually taken (which could be a random exploration action).\n\nThis makes SARSA more conservative: if you sometimes take random risky actions (exploration), SARSA accounts for that — it knows you'll sometimes make suboptimal moves. Q-learning assumes you'll always take the best action.\n\nResult: SARSA tends to learn safer policies in risky environments. Q-learning learns more optimal policies when the learned policy is purely greedy.",
+      whyItMatters: "SARSA is preferred when exploration and deployment use the same policy (on-policy), and when safety matters — risky exploratory actions count against the policy. Q-learning is preferred when you can separate exploration behavior from the learned policy and optimize purely for performance.",
+      diagram: `graph LR
+  classDef sarsa fill:#fef3c7,stroke:#f59e0b,color:#78350f
+  classDef ql fill:#dcfce7,stroke:#4ade80,color:#14532d
+
+  ENV(["State s\naction a taken\nreward r\nnext state s'"]) --> QL["Q-Learning update:\nToward: r + γ × MAX Q(s', any_a)\n(assumes optimal future behavior)"]
+  ENV --> SARSA["SARSA update:\nToward: r + γ × Q(s', a_actual)\n(accounts for actual future behavior)"]
+
+  class QL ql
+  class SARSA sarsa`
+    },
+  ]}
+/>
+
+<ConceptCheck
+  question="In the Q-learning update, why do we update toward r + γ × max Q(s', a') rather than just r?"
+  answer="Because the goal is to accumulate reward over the entire future, not just the next step. r alone is the immediate reward — one step's feedback. r + γ × max Q(s', a') is the Bellman target: immediate reward PLUS the expected total future reward from the next state onward, assuming we play optimally from there. Without the future term, Q-learning would be myopic — it would only learn to maximize the next reward, ignoring whether an action leads to a great or terrible position afterward. The γ × max Q(s', a') term is what makes Q-learning think ahead."
+/>
+
+## Q-Learning Algorithm Summary
+
+<MermaidDiagram chart={`graph TD
+  classDef init fill:#dbeafe,stroke:#60a5fa,color:#1e3a8a
+  classDef loop fill:#ede9fe,stroke:#8b5cf6,color:#4c1d95
+  classDef update fill:#6366f1,stroke:#4f46e5,color:#fff
+  classDef done fill:#dcfce7,stroke:#16a34a,color:#14532d
+
+  INIT["Initialize Q(s,a) = 0 for all s,a"] --> OBS["Observe current state s"]
+  OBS --> ACT["Choose action a\n(ε-greedy: random or argmax Q)"]
+  ACT --> ENV["Execute a, observe r and s'"]
+  ENV --> UPDATE["Update:\nQ(s,a) ← Q(s,a) + α[r + γ max Q(s',a') − Q(s,a)]"]
+  UPDATE --> NEXT["s ← s'"]
+  NEXT --> TERM{"Episode\nended?"}
+  TERM --"No"--> ACT
+  TERM --"Yes"--> RESET["Reset, start new episode"]
+  RESET --> OBS
+
+  class INIT init
+  class OBS,ACT,ENV loop
+  class UPDATE update
+  class TERM,RESET done`}
+/>

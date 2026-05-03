@@ -1,0 +1,168 @@
+import AnalogyCard from '@/components/interactive/AnalogyCard';
+import StepWalkthrough from '@/components/interactive/StepWalkthrough';
+import MermaidDiagram from '@/components/interactive/MermaidDiagram';
+import ConceptCheck from '@/components/interactive/ConceptCheck';
+
+<AnalogyCard
+  title="Skipping the middleman in preference learning"
+  body="In RLHF, you need a middleman: first train a reward model on human preference pairs, then use that reward model to guide the language model via PPO. This is like hiring a consultant to interview your customers, write a report on what they want, then hiring a separate team to change your product based on that report. Direct Preference Optimization (DPO) cuts out both middlemen. It derives a mathematical shortcut showing that the language model can be trained directly on preference pairs — no separate reward model, no PPO training loop, no value network. The preference signal reshapes the policy in one step."
+/>
+
+## Why DPO Was Invented
+
+PPO-RLHF is powerful but expensive. Aligning a single large language model requires four neural networks running simultaneously: the policy being trained, a frozen reference model, a reward model, and a value network. DPO achieves the same alignment goal with only two models.
+
+<MermaidDiagram chart={`graph LR
+  classDef rlhf fill:#fef3c7,stroke:#f59e0b,color:#78350f
+  classDef dpo fill:#dcfce7,stroke:#4ade80,color:#14532d
+
+  RLHF["PPO-RLHF\n──────────────────\n1. Collect preference data\n2. Train reward model (full LM)\n3. PPO with 4 networks:\n   policy · ref · RM · critic\nCost: ~5–10× SFT compute"]
+  DPO["DPO\n──────────────────\n1. Collect preference data\n2. Train directly on pairs:\n   policy · ref only\nCost: ~SFT compute"]
+
+  class RLHF rlhf
+  class DPO dpo`}
+/>
+
+<StepWalkthrough
+  steps={[
+    {
+      title: "Step 1: The PPO-RLHF bottleneck",
+      body: "PPO-RLHF has three expensive sequential stages:\n\n1. Human preference collection: 25,000–100,000 comparison pairs\n2. Reward model training: fine-tune a full LM with a scalar output head to predict preference scores — this alone can cost thousands of dollars and introduce its own failure modes\n3. PPO training: run four networks simultaneously (policy + reference + reward model + value network), requiring careful memory management and extensive hyperparameter tuning\n\nEach stage is a potential failure point. Reward model errors propagate downstream. PPO hyperparameters are notoriously sensitive. The overall compute cost can be 5–10× that of supervised fine-tuning.\n\nDPO asks: given that a reward model and a policy are mathematically related through the RLHF objective, can we skip the explicit reward model entirely?",
+      whyItMatters: "The expense of PPO-RLHF is why most practitioners in 2024–2025 use DPO instead. Understanding the bottleneck helps you appreciate why DPO was a significant contribution — not just an optimization, but a fundamentally different path to the same destination.",
+      diagram: `graph TD
+  classDef step fill:#ede9fe,stroke:#8b5cf6,color:#4c1d95
+  classDef cost fill:#fee2e2,stroke:#f87171,color:#7f1d1d
+  classDef data fill:#dbeafe,stroke:#60a5fa,color:#1e3a8a
+
+  PREF["Human preference pairs\n(prompt, chosen, rejected)"] --> RM_TRAIN["Train reward model\n(LM + scalar head)\nCost: ~$500–$5,000"]
+  RM_TRAIN --> PPO["PPO training loop\n4 networks in memory\nCost: ~$5,000–$50,000+"]
+  PPO --> ALIGNED["Aligned model"]
+
+  class PREF data
+  class RM_TRAIN,PPO cost
+  class ALIGNED step`
+    },
+    {
+      title: "Step 2: The DPO mathematical insight",
+      body: "DPO's key insight is a rearrangement of the RLHF objective.\n\nIn RLHF, we maximize:\n  E[r(x, y) − β × KL[π_θ(y|x) || π_ref(y|x)]]\n\nThe optimal policy π* under this objective satisfies a closed-form relationship:\n  r(x, y) = β × log(π*(y|x) / π_ref(y|x)) + β × log Z(x)\n\nThis says the reward of any response equals the log-ratio of how much more likely the optimal policy is to generate it vs. the reference model — plus a constant Z(x) that depends only on the prompt.\n\nSubstituting this expression for reward into the Bradley-Terry pairwise preference model (which says humans prefer y_w over y_l with probability σ(r(y_w) − r(y_l))) gives the DPO loss directly — no reward model needed.",
+      whyItMatters: "The math shows that a reward model is already implicit in any policy trained under the RLHF objective. DPO doesn't skip the reward — it just learns it implicitly through the policy's log-ratios rather than through a separate network. The reward model is eliminated without losing its effect.",
+      diagram: `graph LR
+  classDef rlhf fill:#dbeafe,stroke:#60a5fa,color:#1e3a8a
+  classDef eq fill:#6366f1,stroke:#4f46e5,color:#fff
+  classDef insight fill:#dcfce7,stroke:#4ade80,color:#14532d
+
+  RLHF["RLHF objective:\nmax E[r(x,y) − β·KL(π||π_ref)]"] --> REARR["Rearrange:\nr(x,y) = β·log(π*(y|x)/π_ref(y|x)) + const"]
+  REARR --> INSIGHT["Reward is implicit in the policy ratio\nNo separate reward model needed"]
+  INSIGHT --> DPO["Substitute into Bradley-Terry:\nL_DPO emerges directly\nfrom preference pairs"]
+
+  class RLHF rlhf
+  class REARR eq
+  class INSIGHT,DPO insight`
+    },
+    {
+      title: "Step 3: The DPO loss function",
+      body: "The DPO loss for a preference pair (prompt x, chosen response y_w, rejected response y_l):\n\nL_DPO = −log σ( β × [log(π_θ(y_w|x)/π_ref(y_w|x)) − log(π_θ(y_l|x)/π_ref(y_l|x))] )\n\nBreaking it down:\n• log(π_θ(y_w|x)/π_ref(y_w|x)): how much more likely the policy is to produce the chosen response vs. the reference model (implicit reward for chosen)\n• log(π_θ(y_l|x)/π_ref(y_l|x)): same ratio for the rejected response (implicit reward for rejected)\n• The loss maximizes the margin between these two implicit rewards\n• β controls how much the policy is allowed to diverge from the reference\n\nThis is structurally a binary cross-entropy loss — any SFT training loop handles it with minor additions.",
+      whyItMatters: "The DPO loss looks like standard supervised learning because it is. No PPO clipping, no advantage estimation, no separate critic update — just log-probabilities and a sigmoid. This is why DPO training infrastructure is nearly identical to fine-tuning infrastructure.",
+      diagram: `graph TD
+  classDef inp fill:#dbeafe,stroke:#60a5fa,color:#1e3a8a
+  classDef calc fill:#ede9fe,stroke:#8b5cf6,color:#4c1d95
+  classDef loss fill:#6366f1,stroke:#4f46e5,color:#fff
+  classDef out fill:#dcfce7,stroke:#4ade80,color:#14532d
+
+  PAIR(["Preference pair\n(x, y_w, y_l)"]) --> RW["log π_θ(y_w|x) − log π_ref(y_w|x)\nimplicit reward for chosen"]
+  PAIR --> RL["log π_θ(y_l|x) − log π_ref(y_l|x)\nimplicit reward for rejected"]
+  RW & RL --> MARGIN["β × (reward_w − reward_l)\nmargin between chosen and rejected"]
+  MARGIN --> LOSS["L = −log σ(margin)\nminimize: push margin positive and large"]
+  LOSS --> EFFECT["Policy increases P(y_w)\nPolicy decreases P(y_l)\nboth relative to reference model"]
+
+  class PAIR inp
+  class RW,RL calc
+  class MARGIN,LOSS loss
+  class EFFECT out`
+    },
+    {
+      title: "Step 4: DPO training in practice",
+      body: "A DPO training run step by step:\n\n1. Start from the SFT checkpoint (same starting point as PPO-RLHF)\n2. Keep a frozen copy as the reference model π_ref\n3. Load a preference dataset: JSONL with {prompt, chosen, rejected} fields\n4. For each batch: compute log-probs of chosen and rejected under both π_θ and π_ref\n5. Compute L_DPO, backpropagate, update only π_θ\n\nTypical hyperparameters:\n• β = 0.1–0.5 (lower = more divergence from reference allowed)\n• Learning rate: 5e-7 to 2e-6 (smaller than SFT — already aligned, fine adjustments only)\n• Epochs: 1–3\n• Batch size: 32–128\n\nDataset size: 5,000–50,000 pairs (less than PPO-RLHF needs).\n\nLibrary: HuggingFace TRL's DPOTrainer handles all log-prob computation and the loss.",
+      whyItMatters: "DPO training looks nearly identical to SFT training. The only additions are: (1) load two models instead of one, (2) compute log-probs for both chosen and rejected responses. Both run in a single forward pass. The simplicity is the entire point.",
+      diagram: `graph LR
+  classDef data fill:#dbeafe,stroke:#60a5fa,color:#1e3a8a
+  classDef model fill:#ede9fe,stroke:#8b5cf6,color:#4c1d95
+  classDef loop fill:#6366f1,stroke:#4f46e5,color:#fff
+  classDef out fill:#dcfce7,stroke:#4ade80,color:#14532d
+
+  DATA(["Preference dataset\n{prompt, chosen, rejected}"]) --> BATCH["Sample batch"]
+  BATCH --> POLICY["Policy π_θ\n(being trained)"]
+  BATCH --> REF["Reference π_ref\n(frozen SFT copy)"]
+  POLICY & REF --> LOGP["4 log-probs:\nπ_θ(y_w), π_θ(y_l)\nπ_ref(y_w), π_ref(y_l)"]
+  LOGP --> LOSS["DPO loss"]
+  LOSS --> UPDATE["Update π_θ only\n(no PPO, no value net, no RM)"]
+  UPDATE --> BATCH
+
+  class DATA data
+  class POLICY,REF model
+  class BATCH,LOGP,LOSS,UPDATE loop`
+    },
+    {
+      title: "Step 5: When to use DPO vs PPO-RLHF",
+      body: "DPO is not universally better — it has different tradeoffs:\n\nUse DPO when:\n• Your goal is instruction-following style alignment (helpfulness, tone, format)\n• You have clean pairwise preference data (prompt, better response, worse response)\n• Infrastructure simplicity and cost matter\n• You want fast iteration — DPO experiments are much cheaper to run\n\nUse PPO-RLHF when:\n• Your reward signal is not pairwise preferences — e.g. a code execution environment, a game score, a math verifier\n• You need the model to interact with an external environment during training\n• Your preference data is very noisy and you want the reward model to regularize it\n• You need very fine-grained reward shaping mid-training\n\nIn practice: DPO is the default for most alignment projects in 2024–2025. PPO is still used where the reward comes from an environment rather than human comparisons.",
+      whyItMatters: "Choosing the right method saves substantial compute. If your alignment task boils down to 'humans prefer response A over B', DPO is almost always the right choice. If your reward comes from running code or playing a game, you need PPO's ability to interact with an environment.",
+      diagram: `graph TD
+  classDef dpo fill:#dcfce7,stroke:#4ade80,color:#14532d
+  classDef ppo fill:#dbeafe,stroke:#60a5fa,color:#1e3a8a
+  classDef q fill:#fef3c7,stroke:#f59e0b,color:#78350f
+
+  Q1{"Reward comes from\nan external environment\n(code runner, game, API)?"}
+  Q1 --"Yes"--> PPO["Use PPO-RLHF\n(needs env interaction)"]
+  Q1 --"No"--> Q2{"Have pairwise preference\ndata or can create it?"}
+  Q2 --"Yes"--> DPO["Use DPO\n(simpler, cheaper, comparable quality)"]
+  Q2 --"No, only scalar ratings"--> Q3{"Can convert to pairs\n(better vs. worse)?"}
+  Q3 --"Yes"--> DPO
+  Q3 --"No"--> PPO
+
+  class DPO dpo
+  class PPO ppo
+  class Q1,Q2,Q3 q`
+    },
+    {
+      title: "Step 6: The DPO family — what came after",
+      body: "DPO inspired a family of variants, each pushing toward simpler infrastructure:\n\n• IPO (Identity Preference Optimization): replaces the Bradley-Terry sigmoid with a squared loss, fixing a theoretical overconfidence issue when preferences are near-deterministic.\n\n• KTO (Kahneman-Tversky Optimization): works with binary feedback (thumbs up / thumbs down) rather than pairs — no need to collect two responses per prompt. Useful when you have rated outputs from production.\n\n• ORPO (Odds Ratio Preference Optimization): eliminates the reference model entirely. Combines an SFT loss with an odds-ratio preference penalty in one objective, using only a single model.\n\n• SimPO: removes the reference model and adds response length normalization to prevent the model from favoring longer responses.\n\nTrend: the field is progressively removing components — from 4 networks (PPO) → 2 networks (DPO) → 1 network (ORPO/SimPO) — while maintaining comparable alignment quality.",
+      whyItMatters: "Understanding the DPO family shows alignment becoming commoditized. Each variant eliminates another infrastructure requirement. The underlying insight — that preference signals can be incorporated directly into training without a separate reward model — unlocked rapid innovation.",
+      diagram: `graph LR
+  classDef old fill:#fef3c7,stroke:#f59e0b,color:#78350f
+  classDef mid fill:#dbeafe,stroke:#60a5fa,color:#1e3a8a
+  classDef new fill:#dcfce7,stroke:#4ade80,color:#14532d
+  classDef newest fill:#6366f1,stroke:#4f46e5,color:#fff
+
+  PPO_RL["PPO-RLHF (2022)\n4 networks\nRM + value net + PPO\nHigh cost"] --> DPO_V["DPO (2023)\n2 networks\nRef model only\nSFT cost"]
+  DPO_V --> IPO_KTO["IPO · KTO (2024)\n2 networks\nUnpaired or binary feedback"]
+  IPO_KTO --> ORPO_S["ORPO · SimPO (2024)\n1 network\nNo reference model\nLowest cost"]
+
+  class PPO_RL old
+  class DPO_V mid
+  class IPO_KTO new
+  class ORPO_S newest`
+    },
+  ]}
+/>
+
+<ConceptCheck
+  question="In the DPO loss, what does the reference model π_ref actually do? What would happen if you removed it and just trained to increase P(y_w) and decrease P(y_l) directly?"
+  answer="The reference model acts as an anchor. It measures how likely the reference SFT policy would have generated each response, and the DPO loss maximizes the margin of the policy's log-ratio above the reference's log-ratio — not the raw log-probability. Without the reference model, the policy could minimize loss by collapsing: assigning near-zero probability to both chosen and rejected responses makes both log-probs very negative, and the margin between them could still appear favorable. The reference model prevents this collapse by anchoring the policy close to the SFT distribution. Variants like ORPO and SimPO replace the reference model with alternative regularization (an explicit SFT loss term, or length normalization) to achieve the same stabilizing effect without running a second model."
+/>
+
+## The Modern Alignment Landscape
+
+<MermaidDiagram chart={`graph TD
+  classDef year fill:#dbeafe,stroke:#60a5fa,color:#1e3a8a
+  classDef method fill:#ede9fe,stroke:#8b5cf6,color:#4c1d95
+  classDef current fill:#6366f1,stroke:#4f46e5,color:#fff
+
+  Y22["2022"] --> IG["InstructGPT · ChatGPT\nPPO-RLHF establishes the paradigm\nRequires: RM training + PPO loop"]
+  Y23["2023"] --> DPO_L["DPO paper (Rafailov et al.)\nSkips explicit reward model\nMatches PPO quality at SFT cost\nAdopted widely within months"]
+  Y24["2024"] --> MULTI["DPO variants proliferate:\nIPO · KTO · ORPO · SimPO\nDPO becomes default\nfor most alignment work"]
+  Y25["2025"] --> NOW["Current practice:\nDPO for instruction tuning\nPPO for reasoning with verifiers\nProcess reward models for chain-of-thought"]
+
+  class Y22,Y23,Y24,Y25 year
+  class IG,DPO_L,MULTI method
+  class NOW current`}
+/>

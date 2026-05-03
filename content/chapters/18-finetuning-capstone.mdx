@@ -1,0 +1,172 @@
+import AnalogyCard from '@/components/interactive/AnalogyCard';
+import StepWalkthrough from '@/components/interactive/StepWalkthrough';
+import MermaidDiagram from '@/components/interactive/MermaidDiagram';
+import ConceptCheck from '@/components/interactive/ConceptCheck';
+
+<AnalogyCard
+  title="Building a specialized expert from a generalist"
+  body="A general-purpose doctor knows a little about everything — cardiology, neurology, dermatology, pediatrics. A specialist cardiologist started from the same medical school training but then spent years deepening their expertise in one area. They can do things the generalist can't: read complex ECG patterns, recommend surgical interventions, interpret subtle test results. Your fine-tuned model is that specialist. It started from a general-purpose language model and was trained to become expert in your specific domain. This capstone brings together everything from Chapters 8–17 into one complete, concrete workflow."
+/>
+
+## The Complete Fine-Tuning Pipeline
+
+This chapter walks through a realistic end-to-end example: fine-tuning a 7B model to be a customer support assistant for a software product. Everything from dataset design through deployment.
+
+<MermaidDiagram chart={`graph LR
+  classDef phase fill:#6366f1,stroke:#4f46e5,color:#fff
+  classDef step fill:#ede9fe,stroke:#8b5cf6,color:#4c1d95
+  classDef done fill:#dcfce7,stroke:#16a34a,color:#14532d
+
+  P1["Phase 1\nDataset"] --> P2["Phase 2\nSetup"]
+  P2 --> P3["Phase 3\nTraining"]
+  P3 --> P4["Phase 4\nEvaluation"]
+  P4 --> P5["Phase 5\nDeployment"]
+
+  class P1,P2,P3,P4,P5 phase`}
+/>
+
+<StepWalkthrough
+  steps={[
+    {
+      title: "Phase 1: Define the task and collect data",
+      body: "Task definition: 'Given a user question about our software product, generate a helpful, accurate, professional support response in 1–3 paragraphs. If the question requires account access, ask the user to contact billing.'\n\nData collection:\n• Export 2,000 past support conversations from your ticketing system\n• Filter: keep only conversations rated 4–5 stars by users (quality filter)\n• Filter: remove conversations involving account/billing access (out of scope)\n• Result: 1,100 high-quality (question, response) pairs\n• Split: 880 train / 110 val / 110 test\n\nData format (JSONL):\n{\"instruction\": \"How do I export my project as a PDF?\", \"output\": \"To export your project as a PDF, click File → Export → PDF...\"}\n\nFormat all 1,100 examples consistently.",
+      whyItMatters: "Starting with a precise task definition prevents scope creep. The quality filter (4–5 star ratings) is doing a lot of work here — it's using past user feedback as a proxy for response quality, saving you from manual annotation.",
+      diagram: `graph TD
+  classDef raw fill:#dbeafe,stroke:#60a5fa,color:#1e3a8a
+  classDef filter fill:#fef3c7,stroke:#f59e0b,color:#78350f
+  classDef clean fill:#dcfce7,stroke:#4ade80,color:#14532d
+
+  EXPORT[("2,000 support tickets\nfrom CRM export")] --> F1["Filter: 4–5 star only\n→ 1,400 remaining"]
+  F1 --> F2["Filter: remove billing/account\n→ 1,100 remaining"]
+  F2 --> F3["Dedup + format check\n→ 1,100 clean examples"]
+  F3 --> SPLIT["Split\n880 train · 110 val · 110 test"]
+
+  class EXPORT raw
+  class F1,F2,F3 filter
+  class SPLIT clean`
+    },
+    {
+      title: "Phase 2: Model selection and setup",
+      body: "Model choice: Llama-3-8B-Instruct\n• 8B parameters — fine-tunes on a single A10G GPU (24 GB)\n• Instruction-tuned base — already trained on chat format, saves us work\n• Apache 2.0 license — commercial use allowed\n\nSetup checklist:\n✓ Load in bfloat16 precision\n✓ Enable gradient checkpointing (saves ~40% VRAM)\n✓ Enable Flash Attention 2 (2× faster attention computation)\n✓ Configure LoRA: rank=16, alpha=32, target Q/K/V/O projections\n✓ Load tokenizer, set pad_token = eos_token\n✓ Apply chat template to all examples\n✓ Create loss mask (0 on instruction tokens, 1 on response tokens)\n\nVerify setup: print 2 tokenized examples and confirm format looks correct before starting training.",
+      whyItMatters: "The instruction-tuned base model (not the raw base) is almost always the better starting point for task fine-tuning. It already understands instruction-following format, which means you need less data and fewer epochs to reach your target quality.",
+      diagram: `graph TD
+  classDef model fill:#6366f1,stroke:#4f46e5,color:#fff
+  classDef config fill:#ede9fe,stroke:#8b5cf6,color:#4c1d95
+  classDef check fill:#dcfce7,stroke:#4ade80,color:#14532d
+
+  BASE["Llama-3-8B-Instruct\n(bfloat16)"] --> GC["Gradient checkpointing ✓"]
+  GC --> FA["Flash Attention 2 ✓"]
+  FA --> LORA["LoRA config\nr=16 · α=32 · targets: q,k,v,o ✓"]
+  LORA --> TOK["Tokenizer\npatch: pad = eos ✓"]
+  TOK --> VERIFY["Print 2 examples\nverify format ✓"]
+  VERIFY --> READY["Ready to train ✅"]
+
+  class BASE model
+  class GC,FA,LORA,TOK config
+  class VERIFY,READY check`
+    },
+    {
+      title: "Phase 3: Training configuration and run",
+      body: "Hyperparameter choices:\n• learning_rate: 2e-4 (LoRA, moderate)\n• num_epochs: 2\n• per_device_train_batch_size: 4\n• gradient_accumulation_steps: 4 → effective batch=16\n• warmup_ratio: 0.05\n• lr_scheduler: cosine\n• eval_strategy: every 50 steps\n• save_strategy: every 50 steps, keep best 3\n• max_seq_length: 2048\n\nExpected training time: ~45 minutes on A10G GPU ($0.90 at $1.20/hr).\n\nDuring training, monitor:\n• Training loss curve: should decrease smoothly\n• Validation loss curve: should track training loss (gap < 0.3 is healthy)\n• Any NaN losses: sign of too-high lr or bad data\n\nAfter 2 epochs, select best checkpoint based on validation loss.",
+      whyItMatters: "The expected cost of $0.90 is intentional context — fine-tuning a task-specialized 8B model for less than a dollar is the direct result of QLoRA/LoRA making things accessible. Two years ago this would have cost $50–$200 in compute.",
+      diagram: `graph LR
+  classDef config fill:#ede9fe,stroke:#8b5cf6,color:#4c1d95
+  classDef run fill:#6366f1,stroke:#4f46e5,color:#fff
+  classDef result fill:#dcfce7,stroke:#4ade80,color:#14532d
+
+  CFG["lr=2e-4 · epochs=2\nbatch=16 (4×4 accum)\nwarmup=5% · cosine decay"] --> RUN["Training run\n~45 minutes / $0.90\non A10G GPU"]
+  RUN --> CURVES["Loss curves:\nTrain: 1.82 → 0.89\nVal: 1.91 → 0.97\n(healthy gap)"]
+  CURVES --> BEST["Best checkpoint:\nstep 200 · val loss = 0.97"]
+
+  class CFG config
+  class RUN run
+  class CURVES,BEST result`
+    },
+    {
+      title: "Phase 4: Evaluation — three levels",
+      body: "Level 1 — Automated (free, instant):\n• Test set accuracy on 110 examples: 89% (vs. base model: 51%)\n• ROUGE-L on a sample of 50 long-form responses: 0.71\n\nLevel 2 — LLM-as-judge (~$8, 30 minutes):\n• Prompt GPT-4 to score 100 outputs on: accuracy (1–5), tone (1–5), helpfulness (1–5)\n• Results: accuracy 4.2, tone 4.6, helpfulness 4.3 average\n• Flagged issues: 7 responses that acknowledged the question but didn't answer it\n\nLevel 3 — Manual review (30 minutes):\n• Review the 7 flagged responses manually\n• Root cause: 7 training examples had that pattern — filter them out and re-train\n\nResult: v2 after removing 7 bad examples: accuracy 4.4, helpfulness 4.5. Pass.",
+      whyItMatters: "The LLM-as-judge step found 7 problematic examples in the training data that manual inspection missed. This is why LLM evaluation is so valuable — it scales to 100+ examples in minutes and finds patterns that are hard to spot when manually reading outputs.",
+      diagram: `graph TD
+  classDef auto fill:#dbeafe,stroke:#60a5fa,color:#1e3a8a
+  classDef judge fill:#ede9fe,stroke:#8b5cf6,color:#4c1d95
+  classDef human fill:#fef3c7,stroke:#f59e0b,color:#78350f
+  classDef result fill:#dcfce7,stroke:#4ade80,color:#14532d
+
+  L1["Level 1: Automated\n89% test accuracy\nROUGE-L: 0.71"] --> L2["Level 2: LLM-as-judge\nAccuracy: 4.2/5\nTone: 4.6/5\n7 flagged responses"]
+  L2 --> L3["Level 3: Manual review\n7 training examples removed\nRe-train → v2"]
+  L3 --> PASS["v2 evaluation:\nAccuracy: 4.4/5 ✅\nHelpfulness: 4.5/5 ✅\n→ Ready to deploy"]
+
+  class L1 auto
+  class L2 judge
+  class L3 human
+  class PASS result`
+    },
+    {
+      title: "Phase 5: Merge, quantize, and deploy",
+      body: "Merge LoRA into base model:\n• W_final = W_base + BA\n• Result: a single merged model file (same size as base, zero inference overhead)\n\nOptional quantization:\n• If serving on a GPU with < 16 GB VRAM: quantize to 4-bit (GGUF or GPTQ)\n• 4-bit 8B model: ~4.5 GB (fits on any 8 GB GPU or 8 GB+ cloud instance)\n\nDeployment options:\n• llama.cpp + GGUF: self-host on CPU/GPU, very low cost\n• Ollama: local serving with simple API\n• vLLM: high-throughput GPU serving for production traffic\n• Hugging Face Inference Endpoints: managed, pay-per-call\n\nMonitor in production: log a random 5% of inputs+outputs for ongoing quality review. Set up alerts if response length drops (sign of degradation) or error rate rises.",
+      whyItMatters: "Merging before deployment is important — don't deploy with the separate LoRA adapter unless you specifically need hot-swap functionality. A merged model loads faster and runs at full base model speed.",
+      diagram: `graph LR
+  classDef model fill:#ede9fe,stroke:#8b5cf6,color:#4c1d95
+  classDef process fill:#fef3c7,stroke:#f59e0b,color:#78350f
+  classDef deploy fill:#dcfce7,stroke:#4ade80,color:#14532d
+
+  CKPT["Best checkpoint\nBase + LoRA adapters"] --> MERGE["Merge: W = W_base + BA\n→ single model file"]
+  MERGE --> QUANT["Optional: 4-bit quantize\n16 GB → 4.5 GB"]
+  QUANT --> OPT["Pick deployment\nvLLM · Ollama · llama.cpp\nHF Endpoints"]
+  OPT --> PROD["✅ Production deployment\nMonitor 5% of traffic"]
+
+  class CKPT model
+  class MERGE,QUANT process
+  class OPT,PROD deploy`
+    },
+    {
+      title: "Phase 6: Iteration — the model improves over time",
+      body: "Fine-tuning is not a one-time event. Production usage reveals new failure modes:\n\n• Week 1: users ask about a new feature that launched after your training data was collected → add examples\n• Week 2: model gives slightly outdated pricing in some responses → add correction examples with current pricing\n• Month 2: usage has grown, you have 500 new 5-star responses → add them to training set, re-fine-tune\n\nData flywheel:\n1. Deploy fine-tuned model\n2. Collect production inputs + outputs\n3. Human review: tag good/bad responses\n4. Add bad → fix examples to dataset\n5. Re-fine-tune → v_next\n6. Evaluate → deploy if better\n\nEach iteration makes the model better at the real queries your users actually send.",
+      whyItMatters: "The production queries users actually send are always different from what you imagined during dataset design. The data flywheel converts real-world failures into training signal — it's the most powerful quality improvement mechanism available.",
+      diagram: `graph TD
+  classDef deploy fill:#6366f1,stroke:#4f46e5,color:#fff
+  classDef collect fill:#dbeafe,stroke:#60a5fa,color:#1e3a8a
+  classDef improve fill:#dcfce7,stroke:#4ade80,color:#14532d
+  classDef train fill:#ede9fe,stroke:#8b5cf6,color:#4c1d95
+
+  PROD["Production model v1"] --> TRAFFIC["Collect 5% of traffic\n(inputs + outputs)"]
+  TRAFFIC --> REVIEW["Human review\ntag good / bad responses"]
+  REVIEW --> DATASET["Add to training set\n(fix bad, keep good as examples)"]
+  DATASET --> RETRAIN["Re-fine-tune\nv2, v3, ..."]
+  RETRAIN --> EVAL["Evaluate v_new vs v_old\nDeploy if better"]
+  EVAL --> PROD
+
+  class PROD deploy
+  class TRAFFIC,REVIEW collect
+  class DATASET,RETRAIN train
+  class EVAL improve`
+    },
+  ]}
+/>
+
+<ConceptCheck
+  question="In Phase 4, the LLM-as-judge found 7 training examples with a pattern where the model 'acknowledged but didn't answer' questions. Rather than removing them, a colleague suggests relabeling them with correct responses. Which approach is better and why?"
+  answer="Relabeling is better. Removing the 7 examples just reduces your training set; you still have the same gap in coverage. If users ask questions similar to those 7 examples in production, the model will still fail — it was never taught how to handle them. Relabeling them with correct responses teaches the model the right behavior for those question types. Now it knows: 'for this type of question, here's how to actually answer it' rather than just never having seen that pattern. Removing is a last resort when you can't determine the correct response; otherwise, fix and keep."
+/>
+
+## What You've Learned in Part 2
+
+<MermaidDiagram chart={`graph TD
+  classDef ch fill:#ede9fe,stroke:#8b5cf6,color:#4c1d95
+  classDef key fill:#6366f1,stroke:#4f46e5,color:#fff
+
+  C8["Ch 8: What is fine-tuning?\n→ continuing training on task data"] --> C9["Ch 9: Full vs. PEFT\n→ LoRA for memory efficiency"]
+  C9 --> C10["Ch 10: Dataset building\n→ quality > quantity"]
+  C10 --> C11["Ch 11: Transfer learning\n→ why pre-trained representations transfer"]
+  C11 --> C12["Ch 12: Full walkthrough\n→ end-to-end pipeline"]
+  C12 --> C13["Ch 13: LoRA\n→ low-rank adaptation"]
+  C13 --> C14["Ch 14: QLoRA\n→ consumer GPU fine-tuning"]
+  C14 --> C15["Ch 15: Hyperparameters\n→ lr, epochs, rank, batch size"]
+  C15 --> C16["Ch 16: Evaluation\n→ metrics, LLM-judge, human eval"]
+  C16 --> C17["Ch 17: Pitfalls\n→ overfitting, forgetting, format drift"]
+  C17 --> C18["Ch 18: Capstone ← you are here\n→ complete end-to-end workflow"]
+
+  class C8,C9,C10,C11,C12,C13,C14,C15,C16,C17,C18 ch`}
+/>
+
+Part 3 — Reinforcement Learning — starts next.

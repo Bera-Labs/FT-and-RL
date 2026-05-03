@@ -1,0 +1,167 @@
+import AnalogyCard from '@/components/interactive/AnalogyCard';
+import StepWalkthrough from '@/components/interactive/StepWalkthrough';
+import MermaidDiagram from '@/components/interactive/MermaidDiagram';
+import ConceptCheck from '@/components/interactive/ConceptCheck';
+
+<AnalogyCard
+  title="A student rewriting essays based on a teacher's marks"
+  body="Imagine a student who writes essays and submits them to a teacher. The teacher doesn't explain exactly what's wrong — they just rank each pair of essays: 'version A is better than version B.' Over many submissions, the student figures out which types of essays the teacher prefers: more evidence, clearer structure, concise language. They internalize the teacher's preferences and start writing better essays without needing explicit corrections. This is RLHF: humans rate AI responses by preference, a 'reward model' learns to predict those preferences, and the language model is then trained with RL to produce responses that score highly on the reward model — aligning its behavior with human values."
+/>
+
+## Why RLHF Exists
+
+Pre-training makes a model predict text. Supervised fine-tuning teaches it to follow instructions. But neither guarantees the model behaves the way humans actually prefer — helpfully, honestly, harmlessly.
+
+<MermaidDiagram chart={`graph LR
+  classDef problem fill:#fee2e2,stroke:#f87171,color:#7f1d1d
+  classDef rlhf fill:#dcfce7,stroke:#4ade80,color:#14532d
+
+  SFT["SFT only\n──────────────────────\nFollows instructions ✓\nBut: can hallucinate ✗\nBut: can be sycophantic ✗\nBut: can be unsafe ✗\nBut: mimics annotation style\nrather than true human preference"]
+  RLHF["RLHF\n──────────────────────\nOptimizes for what humans\nactually prefer\nNot just 'does it sound like\na good answer'\nbut 'is it actually good'"]
+
+  class SFT problem
+  class RLHF rlhf`}
+/>
+
+<StepWalkthrough
+  steps={[
+    {
+      title: "Step 1: Collect human preference data",
+      body: "RLHF begins with humans comparing model outputs:\n\n1. Sample prompts from a diverse distribution (real user queries, carefully curated)\n2. Generate 2–4 responses from the current model for each prompt\n3. Show each pair to human annotators: 'Which response is better?'\n4. Annotators choose A or B (or rate on a scale: A >> B, A > B, A ≈ B, B > A)\n\nAnnotation guidelines matter enormously. What counts as 'better'? More helpful? More honest? Less harmful? Shorter? OpenAI's InstructGPT used a rubric covering helpfulness, truthfulness, and harmlessness.\n\nDataset size: typically 25,000–100,000 comparison pairs for a strong reward model.",
+      whyItMatters: "The quality of human preference data is the ceiling for RLHF quality. If annotators are inconsistent, disagree on what 'better' means, or have systematic biases, the reward model will learn those biases and the RLHF-trained model will reflect them.",
+      diagram: `graph TD
+  classDef prompt fill:#dbeafe,stroke:#60a5fa,color:#1e3a8a
+  classDef response fill:#ede9fe,stroke:#8b5cf6,color:#4c1d95
+  classDef human fill:#6366f1,stroke:#4f46e5,color:#fff
+  classDef data fill:#dcfce7,stroke:#4ade80,color:#14532d
+
+  P(["Prompt:\n'Explain black holes'"]) --> A["Response A:\n'Black holes are regions...'"]
+  P --> B["Response B:\n'A black hole forms when...'"]
+  A & B --> H["Human annotator\n'B is better (clearer, more engaging)'"]
+  H --> PREF["Preference pair:\n(prompt, A, B, label=B_preferred)\nstored in dataset"]
+
+  class P prompt
+  class A,B response
+  class H human
+  class PREF data`
+    },
+    {
+      title: "Step 2: Train the reward model",
+      body: "The reward model is a neural network that predicts human preference scores.\n\nArchitecture: start from a pre-trained LM (same base as the policy), add a linear head that outputs a scalar reward score.\n\nTraining objective: given a pair (response A, response B) where humans preferred B:\n\nLoss = −log σ(r(B) − r(A))\n\nThis is the Bradley-Terry model for pairwise comparisons — it trains the reward model to assign higher scores to preferred responses. σ is sigmoid.\n\nAfter training, r(prompt, response) predicts how much a human would prefer this response to alternatives.",
+      whyItMatters: "The reward model is the stand-in for human judgment at scale. Instead of having humans rate every response during RL training (which would require millions of human ratings), we have humans rate ~50,000 comparisons and train a model to generalize from those.",
+      diagram: `graph LR
+  classDef inp fill:#dbeafe,stroke:#60a5fa,color:#1e3a8a
+  classDef rm fill:#6366f1,stroke:#4f46e5,color:#fff
+  classDef score fill:#dcfce7,stroke:#4ade80,color:#14532d
+  classDef loss fill:#fef3c7,stroke:#f59e0b,color:#78350f
+
+  PA(["Prompt + Response A\n(less preferred)"]) --> RM["Reward model\n(pre-trained LM\n+ scalar head)"]
+  PB(["Prompt + Response B\n(preferred)"]) --> RM
+  RM --> RA["r(A) = 2.3"]
+  RM --> RB["r(B) = 4.1"]
+  RA & RB --> LOSS["Loss = −log σ(4.1 − 2.3)\n= −log σ(1.8)\n(push r(B) > r(A))"]
+
+  class PA,PB inp
+  class RM rm
+  class RA,RB score
+  class LOSS loss`
+    },
+    {
+      title: "Step 3: Set up PPO for the language model",
+      body: "Now we fine-tune the language model using PPO, with the reward model as the environment.\n\nSetup:\n• Policy model: the LM to be aligned (start from the SFT checkpoint)\n• Reference model: a frozen copy of the SFT model (used for KL penalty)\n• Reward model: frozen after training in Step 2\n• Critic: a separate value network (often another copy of the LM with a regression head)\n\nThe objective combines reward maximization with a KL penalty:\n\nObjective = r(prompt, response) − β × KL[π_θ || π_ref]\n\nThe KL term prevents the model from drifting too far from the SFT model — ensuring outputs stay coherent and on-distribution.",
+      whyItMatters: "The KL penalty against the reference model is the most important stability mechanism in RLHF. Without it, the model would rapidly learn to produce responses that score high on the reward model but are incoherent, repetitive, or completely unlike natural language — exploiting weaknesses in the reward model.",
+      diagram: `graph TD
+  classDef lm fill:#6366f1,stroke:#4f46e5,color:#fff
+  classDef frozen fill:#dbeafe,stroke:#60a5fa,color:#1e3a8a
+  classDef obj fill:#dcfce7,stroke:#4ade80,color:#14532d
+
+  POLICY["Policy LM π_θ\n(SFT checkpoint)\n✏️ Updated by PPO"] --> GEN["Generate response\nfor each prompt"]
+  REF["Reference LM π_ref\n(SFT checkpoint, frozen)\n🔒 Never updated"] --> KL["KL(π_θ || π_ref)\n(stay close to SFT)"]
+  RM["Reward Model r\n(trained in Step 2, frozen)\n🔒 Never updated"] --> REWARD["r(prompt, response)"]
+  GEN --> REWARD
+  GEN --> KL
+  REWARD & KL --> OBJ["Final reward = r − β × KL\nPPO optimizes this"]
+
+  class POLICY lm
+  class REF,RM frozen
+  class KL,REWARD,OBJ obj`
+    },
+    {
+      title: "Step 4: The PPO training loop for RLHF",
+      body: "RLHF PPO training proceeds as:\n\n1. Sample prompts from a prompt dataset\n2. Generate full responses using the current policy model\n3. Score each response with the reward model\n4. Compute KL penalty between policy and reference model\n5. Combined reward: r_total = r_RM(response) − β × KL\n6. Use PPO to update the policy toward higher r_total\n7. Repeat\n\nTypical scale:\n• ~50,000–500,000 prompts in the prompt dataset\n• 1–4 PPO epochs per batch of prompts\n• 3–7 days of training on 64–512 A100 GPUs for a large model\n• β (KL coefficient): typically 0.02–0.1",
+      whyItMatters: "RLHF training is expensive compared to SFT — it requires running four neural networks simultaneously (policy, reference, reward model, critic). For large models, this requires careful memory management, often using mixed precision, gradient checkpointing, and sometimes model parallelism.",
+      diagram: `graph LR
+  classDef loop fill:#ede9fe,stroke:#8b5cf6,color:#4c1d95
+  classDef compute fill:#6366f1,stroke:#4f46e5,color:#fff
+  classDef update fill:#dcfce7,stroke:#4ade80,color:#14532d
+
+  PROMPT(["Sample 128 prompts"]) --> GEN["Policy generates\n128 responses\n(~200 tokens each)"]
+  GEN --> SCORE["Reward model scores\nall 128 responses"]
+  GEN --> KLPEN["KL penalty computed\nfor each response"]
+  SCORE & KLPEN --> PPO["PPO update\n(4 epochs on this batch)"]
+  PPO --> PROMPT
+
+  class PROMPT,GEN loop
+  class SCORE,KLPEN compute
+  class PPO update`
+    },
+    {
+      title: "Step 5: Constitutional AI and RLAIF",
+      body: "A key limitation of RLHF: human annotations are expensive and slow. Two alternatives that reduce the human bottleneck:\n\n• Constitutional AI (Anthropic): instead of humans rating responses, an AI model critiques responses against a written 'constitution' (a list of principles). The AI rates and revises its own outputs iteratively. Cheaper but requires careful constitution writing.\n\n• RLAIF (RL from AI Feedback): use a strong AI model (e.g., GPT-4) as the annotator instead of humans. The strong model judges response quality according to a rubric. Much cheaper, reasonably correlated with human preferences.\n\nBoth approaches trade some annotation quality for scale — you can get 10–100× more feedback at the same cost.",
+      whyItMatters: "RLAIF is increasingly used in practice because human annotation bottlenecks model improvement. A model that can improve itself using AI feedback, with periodic human oversight for calibration, scales much further than one that requires 100% human ratings.",
+      diagram: `graph LR
+  classDef human fill:#dbeafe,stroke:#60a5fa,color:#1e3a8a
+  classDef ai fill:#ede9fe,stroke:#8b5cf6,color:#4c1d95
+  classDef result fill:#dcfce7,stroke:#4ade80,color:#14532d
+
+  H["Human annotators\n(RLHF)\n──────────────\n✓ High quality\n✗ Expensive\n✗ Slow (days)\n✗ Limited scale"]
+  AI["AI annotators\n(RLAIF)\n──────────────\n~ Good quality\n✓ Cheap\n✓ Fast (minutes)\n✓ Massive scale"]
+  CAI["Constitutional AI\n──────────────\n✓ No annotators\n✓ Principles-based\n~ Depends on constitution quality"]
+
+  class H human
+  class AI,CAI ai`
+    },
+    {
+      title: "Step 6: Reward model overoptimization",
+      body: "A key danger in RLHF: overoptimization of the reward model.\n\nThe reward model is an imperfect approximation of human preference. If we optimize the LM too aggressively against this imperfect model, it will find responses that score highly on the reward model but that humans don't actually prefer. This is reward hacking applied to human preference modeling.\n\nSymptoms:\n• Model becomes sycophantic (agrees with everything the user says to get high scores)\n• Outputs become verbose and padded (long ≠ good, but reward model may overweight length)\n• Model generates confident-sounding but wrong information\n\nFixes:\n• KL penalty (already discussed — limits how far from SFT the model can go)\n• Periodic re-training of reward model on fresh human data\n• Ensemble of reward models (harder to simultaneously hack multiple models)\n• Regular human evaluation during training, not just at end",
+      whyItMatters: "Reward model overoptimization is why RLHF-trained models can become sycophantic or overconfident. The reward model learned that humans often rate confident, agreeable responses highly — so the model produces those even when it should express uncertainty.",
+      diagram: `graph LR
+  classDef good fill:#dcfce7,stroke:#4ade80,color:#14532d
+  classDef bad fill:#fee2e2,stroke:#f87171,color:#7f1d1d
+  classDef sweet fill:#6366f1,stroke:#4f46e5,color:#fff
+
+  LOW["Underoptimized\nLittle RL training\nSFT model + small improvement\nSlightly better than SFT only"] --> SWEET
+  SWEET["Sweet spot\nModerate RL training\nHigh reward model score\nStill aligned with true preferences"] --> HIGH
+  HIGH["Overoptimized\nToo much RL training\nMaximizes reward model score\nBut humans don't prefer outputs\n(sycophantic, verbose, wrong)"]
+
+  class LOW,SWEET good
+  class HIGH bad`
+    },
+  ]}
+/>
+
+<ConceptCheck
+  question="During RLHF training, you notice the language model's outputs are getting increasingly long — it's padding responses with unnecessary repetition and filler phrases. The reward model score keeps increasing. What's likely happening, and how would you fix it?"
+  answer="Reward model overoptimization — the model discovered that the reward model has a positive correlation between response length and score (because annotators often preferred longer, more thorough responses in the training data). The model is gaming this correlation by adding filler. Fixes: (1) Increase the KL penalty coefficient β — this limits how much the model can change from its SFT baseline and prevents length hacking. (2) Add an explicit length penalty to the reward: final_reward = r_RM − λ × max(0, len − target_len). (3) Retrain the reward model with comparison pairs that explicitly penalize unnecessary verbosity."
+/>
+
+## The Complete RLHF Pipeline
+
+<MermaidDiagram chart={`graph TD
+  classDef phase fill:#6366f1,stroke:#4f46e5,color:#fff
+  classDef data fill:#dbeafe,stroke:#60a5fa,color:#1e3a8a
+  classDef model fill:#ede9fe,stroke:#8b5cf6,color:#4c1d95
+  classDef done fill:#dcfce7,stroke:#16a34a,color:#14532d
+
+  BASE["1. Pre-trained base model\n(predict next token on internet text)"] --> SFT["2. Supervised fine-tuning (SFT)\n(instruction-following on curated data)"]
+  SFT --> PREF["3. Collect human preference data\n(compare response pairs, ~50k examples)"]
+  PREF --> RM["4. Train reward model\n(learns to predict human preferences)"]
+  RM --> PPO_RLHF["5. PPO with reward model\n(optimize LM against learned preferences\n+ KL penalty vs. SFT reference)"]
+  PPO_RLHF --> EVAL["6. Human evaluation\n(verify improvement on target behaviors)"]
+  EVAL --> DEPLOY["✅ Aligned model\n(helpful, honest, harmless)"]
+
+  class BASE,SFT data
+  class PREF,RM model
+  class PPO_RLHF phase
+  class EVAL,DEPLOY done`}
+/>

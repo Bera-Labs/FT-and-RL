@@ -1,0 +1,180 @@
+import AnalogyCard from '@/components/interactive/AnalogyCard';
+import StepWalkthrough from '@/components/interactive/StepWalkthrough';
+import MermaidDiagram from '@/components/interactive/MermaidDiagram';
+import ConceptCheck from '@/components/interactive/ConceptCheck';
+
+<AnalogyCard
+  title="Following a recipe from start to finish"
+  body="A recipe doesn't just tell you the ingredients — it walks you through every step in order: prep the ingredients, heat the pan, add things in sequence, check for doneness, plate and serve. Skip a step and the dish fails. Fine-tuning is the same: there's a specific sequence of decisions and actions, and understanding the full pipeline end-to-end is what separates a working fine-tune from a frustrating debugging session. This chapter walks through the complete process, from raw data to a deployable model, with every step explained."
+/>
+
+## The Full Pipeline at a Glance
+
+<MermaidDiagram chart={`graph LR
+  classDef step fill:#ede9fe,stroke:#8b5cf6,color:#4c1d95
+  classDef data fill:#dbeafe,stroke:#60a5fa,color:#1e3a8a
+  classDef train fill:#6366f1,stroke:#4f46e5,color:#fff
+  classDef done fill:#dcfce7,stroke:#16a34a,color:#14532d
+
+  D["1. Prepare dataset\n(clean, format, split)"] --> M["2. Load base model\n+ tokenizer"]
+  M --> C["3. Configure training\n(lr, epochs, batch size)"]
+  C --> T["4. Training loop\n(forward · loss · backprop · update)"]
+  T --> E["5. Evaluate on val set\n(save best checkpoint)"]
+  E --> TEST["6. Test set evaluation\n(final honest score)"]
+  TEST --> SAVE["7. Save & deploy\n(merge + export)"]
+
+  class D,M data
+  class C,T train
+  class E,TEST step
+  class SAVE done`}
+/>
+
+<StepWalkthrough
+  steps={[
+    {
+      title: "Step 1: Prepare and format the dataset",
+      body: "Everything starts with a JSONL file (one JSON object per line). Each line has at minimum an instruction and an output:\n\n{\"instruction\": \"Classify the sentiment\", \"input\": \"I love this product!\", \"output\": \"Positive\"}\n\nYou need three files:\n• train.jsonl — 80–90% of examples\n• val.jsonl — 10–15% for checkpoint selection\n• test.jsonl — 5–10% for final evaluation\n\nThe tokenizer then converts each example into the model's chat format, adding special tokens like [BOS], [INST], [/INST], and [EOS] that the model expects.",
+      whyItMatters: "The chat template must match the base model's expected format exactly. Using the wrong template produces training data the model doesn't recognize, and the fine-tuned model will behave strangely. Always use the tokenizer's built-in apply_chat_template method.",
+      diagram: `graph LR
+  classDef raw fill:#dbeafe,stroke:#60a5fa,color:#1e3a8a
+  classDef fmt fill:#ede9fe,stroke:#8b5cf6,color:#4c1d95
+  classDef tok fill:#6366f1,stroke:#4f46e5,color:#fff
+
+  R[("train.jsonl\nval.jsonl\ntest.jsonl")] --> T["Apply chat template\n<s>[INST] instruction [/INST]\nresponse </s>"]
+  T --> TOK["Tokenize\n[1, 733, 16289, 28793, ...]"]
+  TOK --> MASK["Create loss mask\n1s on response tokens\n0s on instruction tokens"]
+
+  class R raw
+  class T fmt
+  class TOK,MASK tok`
+    },
+    {
+      title: "Step 2: Load the base model and configure for training",
+      body: "Load the pre-trained checkpoint in float16 or bfloat16 precision (half the memory of float32, minimal quality loss). Configure the model for training:\n\n• Enable gradient checkpointing: recomputes activations during backward pass instead of storing them — trades compute for memory, crucial for long sequences\n• Set up the tokenizer: load matching the model, set pad token = eos token (common requirement)\n• Enable flash attention if available: 2–4× faster attention computation\n\nFor LoRA (Chapter 13), you'd also configure the LoRA adapter at this step. For full fine-tuning, the model is used directly.",
+      whyItMatters: "Gradient checkpointing can reduce VRAM usage by 40–60% with only ~20% slower training. For a 7B model, this is often the difference between fitting on one GPU or needing two. Always enable it.",
+      diagram: `graph TD
+  classDef load fill:#dbeafe,stroke:#60a5fa,color:#1e3a8a
+  classDef config fill:#fef3c7,stroke:#f59e0b,color:#78350f
+  classDef ready fill:#dcfce7,stroke:#4ade80,color:#14532d
+
+  HF["Hugging Face Hub\nLlama-3-8B"] --> LOAD["Load in bfloat16\n~16 GB VRAM"]
+  LOAD --> GC["Gradient checkpointing\n✓ enabled (saves ~40% VRAM)"]
+  GC --> FA["Flash Attention 2\n✓ enabled (2× faster)"]
+  FA --> READY["Model ready for training\n✅"]
+
+  class HF load
+  class GC,FA config
+  class READY ready`
+    },
+    {
+      title: "Step 3: Set training hyperparameters",
+      body: "Key hyperparameters to set:\n\n• learning_rate: 1e-5 to 5e-5 for full fine-tuning; 1e-4 to 3e-4 for LoRA\n• num_train_epochs: 1–3 epochs is usually sufficient; more risks overfitting\n• per_device_train_batch_size: largest power of 2 that fits in VRAM (1, 2, 4, 8...)\n• gradient_accumulation_steps: if batch_size=1 but you want effective batch_size=8, set this to 8\n• warmup_ratio: 0.05 to 0.1 (5–10% of steps for LR warmup)\n• lr_scheduler_type: 'cosine' works well\n• eval_steps: how often to evaluate on the validation set (e.g., every 100 steps)\n• save_steps: how often to save a checkpoint",
+      whyItMatters: "Gradient accumulation is a key trick for working with small VRAM: you accumulate gradients over multiple forward passes before doing one weight update, simulating a larger batch size without the memory cost.",
+      diagram: `graph LR
+  classDef param fill:#ede9fe,stroke:#8b5cf6,color:#4c1d95
+  classDef val fill:#6366f1,stroke:#4f46e5,color:#fff
+  classDef effect fill:#dcfce7,stroke:#4ade80,color:#14532d
+
+  LR["learning_rate\n2e-5"] --> E1["Slow, stable learning"]
+  EP["num_epochs\n2"] --> E2["Low overfitting risk"]
+  BS["batch_size = 2\ngrad_accum = 8"] --> E3["Effective batch = 16\n(without 16× VRAM)"]
+  WU["warmup_ratio = 0.05"] --> E4["Stable start\nno early spikes"]
+
+  class LR,EP,BS,WU param
+  class E1,E2,E3,E4 effect`
+    },
+    {
+      title: "Step 4: The training loop",
+      body: "The actual training loop runs automatically once configured. Each step:\n\n1. Load a batch from train.jsonl\n2. Forward pass: input tokens → model → logits (predicted next-token probabilities)\n3. Compute cross-entropy loss on response tokens only\n4. Backward pass: compute gradients via backpropagation\n5. (Optional) Gradient clipping: cap gradient norm at 1.0 to prevent unstable updates\n6. Optimizer step: update weights using AdamW\n7. Learning rate scheduler step: adjust lr per schedule\n8. Repeat\n\nEvery eval_steps, run validation. Every save_steps, write a checkpoint to disk.",
+      whyItMatters: "Gradient clipping (step 5) is a safety net for training instabilities. If a batch happens to produce an unusually large gradient, clipping prevents it from making a huge weight update that might permanently damage the model.",
+      diagram: `graph TD
+  classDef data fill:#dbeafe,stroke:#60a5fa,color:#1e3a8a
+  classDef compute fill:#6366f1,stroke:#4f46e5,color:#fff
+  classDef update fill:#dcfce7,stroke:#4ade80,color:#14532d
+  classDef check fill:#fef3c7,stroke:#f59e0b,color:#78350f
+
+  B(["Load batch"]) --> FWD["Forward pass\n→ logits"]
+  FWD --> LOSS["Cross-entropy loss\n(response tokens only)"]
+  LOSS --> BACK["Backprop\n→ gradients"]
+  BACK --> CLIP["Gradient clipping\nmax norm = 1.0"]
+  CLIP --> OPT["AdamW step\nupdate weights"]
+  OPT --> LRS["LR scheduler step"]
+  LRS --> EVAL{"eval step?"}
+  EVAL --"Yes"--> VAL["Validate\nsave if best"]
+  EVAL --"No"--> B
+  VAL --> B
+
+  class B data
+  class FWD,BACK,LOSS compute
+  class CLIP,OPT,LRS update
+  class EVAL,VAL check`
+    },
+    {
+      title: "Step 5: Select the best checkpoint",
+      body: "Throughout training, you've been saving checkpoints every eval_steps. Each checkpoint has a validation loss score. After training completes:\n\n1. Look at the validation loss curve — find the epoch/step where val loss was lowest\n2. Load that checkpoint (not the last one — the last one is often overfit)\n3. This is your candidate model\n\nTip: also look at actual validation outputs, not just the loss number. Sometimes the outputs look great before the loss is technically at its minimum — and sometimes the loss is low but the outputs have subtle problems (repetition, format drift).",
+      whyItMatters: "The last checkpoint is rarely the best. Training almost always overshoots slightly. Always select based on validation loss, not training loss.",
+      diagram: `graph LR
+  classDef high fill:#fee2e2,stroke:#f87171,color:#7f1d1d
+  classDef good fill:#dcfce7,stroke:#4ade80,color:#14532d
+  classDef over fill:#fef3c7,stroke:#f59e0b,color:#78350f
+
+  C1["Checkpoint: step 100\nVal loss: 1.42"] --> C2["Checkpoint: step 200\nVal loss: 1.18\n💾 saved"]
+  C2 --> C3["Checkpoint: step 300 ✅\nVal loss: 1.09 ← best\n💾 saved"]
+  C3 --> C4["Checkpoint: step 400\nVal loss: 1.14 ↑\n(starting to overfit)"]
+  C4 --> C5["Checkpoint: step 500\nVal loss: 1.31 ↑\n(overfit — don't use!)"]
+
+  class C1,C2 high
+  class C3 good
+  class C4,C5 over`
+    },
+    {
+      title: "Step 6: Final evaluation and model export",
+      body: "Run the best checkpoint on the test set exactly once. Record this score — it's your model's honest performance number.\n\nThen prepare the model for deployment:\n• For LoRA: merge the adapter weights into the base model (W_final = W_base + BA) — produces a single model file with zero inference overhead\n• For full fine-tuning: save the final weights directly\n• Quantize to 4-bit or 8-bit if needed for smaller memory footprint at inference\n• Export to GGUF format if using llama.cpp, or keep in HuggingFace format for transformers\n\nThe exported file is your deployable model.",
+      whyItMatters: "Merging LoRA adapters before deployment is important — it eliminates the runtime overhead of applying BA at every forward pass. The merged model runs at the same speed as the original base model.",
+      diagram: `graph LR
+  classDef best fill:#ede9fe,stroke:#8b5cf6,color:#4c1d95
+  classDef merge fill:#fef3c7,stroke:#f59e0b,color:#78350f
+  classDef deploy fill:#dcfce7,stroke:#4ade80,color:#14532d
+
+  BEST["Best checkpoint\n(step 300)"] --> TEST["Test set eval\n→ final score: 94.2%"]
+  TEST --> MERGE["Merge LoRA → base\nW_final = W + BA"]
+  MERGE --> QUANT["Optional: quantize\n16-bit → 4-bit (saves 75% VRAM)"]
+  QUANT --> EXPORT["Export weights\n(HuggingFace or GGUF)"]
+  EXPORT --> DEPLOY["✅ Deployable model\nready for production"]
+
+  class BEST best
+  class MERGE,QUANT merge
+  class DEPLOY,TEST deploy`
+    },
+  ]}
+/>
+
+<ConceptCheck
+  question="Your training loss is 0.3 after epoch 2, but your validation loss is 1.8. You have 3 saved checkpoints at epochs 1, 1.5, and 2. Which should you use, and why?"
+  answer="Check the validation loss at each checkpoint — use whichever has the lowest validation loss, not the lowest training loss. The training loss of 0.3 vs validation loss of 1.8 is a strong overfitting signal — the model is memorizing training examples. The epoch-1 or epoch-1.5 checkpoint likely has a much lower validation loss and will generalize better in production. The epoch-2 checkpoint, despite the best training loss, is the worst choice."
+/>
+
+## Complete Training Summary
+
+<MermaidDiagram chart={`graph TD
+  classDef data fill:#dbeafe,stroke:#60a5fa,color:#1e3a8a
+  classDef config fill:#ede9fe,stroke:#8b5cf6,color:#4c1d95
+  classDef train fill:#6366f1,stroke:#4f46e5,color:#fff
+  classDef eval fill:#fef3c7,stroke:#f59e0b,color:#78350f
+  classDef done fill:#dcfce7,stroke:#16a34a,color:#14532d
+
+  A["Prepare JSONL dataset\ntrain / val / test splits"] --> B["Load model (bf16)\n+ gradient checkpointing + flash attention"]
+  B --> C["Configure hyperparameters\nlr=2e-5 · epochs=2 · warmup=5%"]
+  C --> D["Training loop\nforward → loss → backprop → AdamW update"]
+  D --> E["Eval every N steps\nsave checkpoints with val loss"]
+  E --> F["Select best checkpoint\n(lowest val loss)"]
+  F --> G["Test set evaluation\n(run once — final score)"]
+  G --> H["Merge LoRA + optional quantize\nexport for deployment"]
+  H --> I["✅ Production model"]
+
+  class A,B data
+  class C config
+  class D train
+  class E,F eval
+  class G,H,I done`}
+/>

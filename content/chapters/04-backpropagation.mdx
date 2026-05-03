@@ -1,0 +1,233 @@
+import AnalogyCard from '@/components/interactive/AnalogyCard';
+import StepWalkthrough from '@/components/interactive/StepWalkthrough';
+import MermaidDiagram from '@/components/interactive/MermaidDiagram';
+import ConceptCheck from '@/components/interactive/ConceptCheck';
+
+<AnalogyCard
+  title="Passing blame backwards through a relay team"
+  body="Imagine a relay race where the last runner drops the baton and the team loses. Whose fault was it? The last runner dropped it — but maybe the third runner handed it off badly. And maybe the second runner tired them out with bad pacing. And maybe the first runner set the wrong tempo entirely. A coach needs to figure out how much to blame each runner so they know who needs more training. This is exactly what backpropagation does: after the network makes a wrong prediction, it works backwards through every layer asking 'how much did you contribute to this mistake?' Each weight gets a blame score — its gradient — and that score is used to improve it."
+/>
+
+## What is Backpropagation?
+
+In Chapter 3, we said that gradient descent needs the gradient — a number for every weight that says "changing this weight by a tiny amount changes the loss by this much." But we glossed over a key question: **how do you actually compute those gradients** when a network has billions of weights spread across dozens of layers?
+
+Backpropagation is the answer. It's an efficient algorithm that applies the **chain rule of calculus** backwards through the network, computing every weight's gradient in one pass.
+
+<StepWalkthrough
+  steps={[
+    {
+      title: "Step 1: Complete the forward pass",
+      body: "Backpropagation always starts with a full forward pass. We feed in one example (or a mini-batch), let it flow through every layer, and record the output at each layer. These intermediate values are important — we'll need them on the way back.\n\nThink of this as the team running the race and recording exactly what happened at each handoff point.",
+      whyItMatters: "We can't compute how much each layer contributed to the error until we know what each layer actually produced. The forward pass records all the 'evidence' for the backward investigation.",
+      diagram: `graph LR
+  classDef inp fill:#dbeafe,stroke:#60a5fa,color:#1e3a8a
+  classDef layer fill:#ede9fe,stroke:#8b5cf6,color:#4c1d95
+  classDef out fill:#fee2e2,stroke:#f87171,color:#7f1d1d
+  classDef save fill:#fef3c7,stroke:#f59e0b,color:#78350f
+
+  X(["📧 Input"]) --> L1["Layer 1\na₁ = 0.74 💾"]
+  L1 --> L2["Layer 2\na₂ = 0.42 💾"]
+  L2 --> L3["Layer 3\na₃ = 0.31 💾"]
+  L3 --> Loss["Loss = 0.83 🔴"]
+
+  class X inp
+  class L1,L2,L3 layer
+  class Loss out`
+    },
+    {
+      title: "Step 2: Compute the loss gradient (start of the backward pass)",
+      body: "Once we have the loss, we compute how sensitive the loss is to the final layer's output. For most loss functions, this starting gradient has a simple closed-form formula.\n\nFor binary cross-entropy with a predicted probability p and true label y:\n∂Loss/∂p = −y/p + (1−y)/(1−p)\n\nIf the true label is 1 and we predicted 0.31, this gives us a large negative gradient — telling us the output needs to increase a lot.",
+      whyItMatters: "This first gradient is the seed that we'll propagate backwards. Every other gradient in the network will be derived from it by multiplying through the chain rule.",
+      diagram: `graph LR
+  classDef pred fill:#fee2e2,stroke:#f87171,color:#7f1d1d
+  classDef truth fill:#dcfce7,stroke:#4ade80,color:#14532d
+  classDef grad fill:#fef3c7,stroke:#f59e0b,color:#78350f
+
+  P["Prediction: 0.31"] --> G["∂Loss/∂p\n= −1/0.31 + 0\n= −3.23"]
+  T["True label: 1"] --> G
+  G --> Next["→ pass backward"]
+
+  class P pred
+  class T truth
+  class G,Next grad`
+    },
+    {
+      title: "Step 3: Apply the chain rule layer by layer",
+      body: "The chain rule says: if output depends on hidden, and hidden depends on weight, then:\n∂Loss/∂weight = (∂Loss/∂hidden) × (∂hidden/∂weight)\n\nIn plain English: 'the gradient through a chain of operations is the product of all the individual gradients along the chain.'\n\nBackpropagation applies this rule repeatedly, layer by layer, working from the output back to the input.",
+      whyItMatters: "The chain rule is why deep networks are trainable at all. Without it, we'd have to somehow estimate the gradient of each weight independently — impossible at scale.",
+      diagram: `graph RL
+  classDef output fill:#fee2e2,stroke:#f87171,color:#7f1d1d
+  classDef grad fill:#fef3c7,stroke:#f59e0b,color:#78350f
+  classDef chain fill:#ede9fe,stroke:#8b5cf6,color:#4c1d95
+
+  dL["∂L/∂ŷ\n(output gradient)"] --> dL3["∂L/∂a₃\n× activation grad"]
+  dL3 --> dL2["∂L/∂a₂\n× layer-3 weights"]
+  dL2 --> dL1["∂L/∂a₁\n× layer-2 weights"]
+  dL1 --> dW["∂L/∂w\nfor every weight"]
+
+  class dL output
+  class dL3,dL2,dL1 grad
+  class dW chain`
+    },
+    {
+      title: "Step 4: Compute gradients for the weights",
+      body: "At each layer, we compute two things:\n1. The gradient for the weights in that layer (used to update those weights)\n2. The gradient that flows further backwards (used by the previous layer)\n\nFor a linear layer: z = Wx + b\n• ∂L/∂W = (∂L/∂z) × xᵀ  ← gradient for the weight matrix\n• ∂L/∂x = Wᵀ × (∂L/∂z)  ← gradient that flows back\n\nThis is the core computation that gets repeated at every layer.",
+      whyItMatters: "Each layer has two jobs in the backward pass: update itself, and pass information backwards. This is why backprop is efficient — every layer handles its own part.",
+      diagram: `graph TD
+  classDef incoming fill:#fef3c7,stroke:#f59e0b,color:#78350f
+  classDef compute fill:#ede9fe,stroke:#8b5cf6,color:#4c1d95
+  classDef weightgrad fill:#dcfce7,stroke:#4ade80,color:#14532d
+  classDef passback fill:#fef3c7,stroke:#f59e0b,color:#78350f
+
+  G["∂L/∂z (incoming gradient)"] --> C["Layer computation"]
+  X["Stored input x"] --> C
+  W["Weight matrix W"] --> C
+  C --> WG["∂L/∂W = ∂L/∂z × xᵀ\n→ update these weights ✓"]
+  C --> PB["∂L/∂x = Wᵀ × ∂L/∂z\n→ pass to previous layer →"]
+
+  class G incoming
+  class C compute
+  class WG weightgrad
+  class PB passback`
+    },
+    {
+      title: "Step 5: Handle activation functions",
+      body: "Remember that each neuron applies an activation function (like ReLU). This adds another term in the chain rule:\n∂L/∂z_pre = (∂L/∂z_post) × (∂activation/∂z_pre)\n\nFor ReLU: the gradient is 1 if the input was positive, and 0 if it was negative (since ReLU outputs 0 for negative inputs and any nudge won't change the output).\n\nThis is why we needed to save the forward pass values — we check whether each neuron's pre-activation was positive or negative to know its gradient.",
+      whyItMatters: "Activation gradients can be a problem. If too many neurons have zero gradient (all ReLU inputs were negative), gradients stop flowing and earlier layers stop learning. This is called the 'dying ReLU' problem.",
+      diagram: `graph LR
+  classDef pos fill:#dcfce7,stroke:#4ade80,color:#14532d
+  classDef neg fill:#fee2e2,stroke:#f87171,color:#7f1d1d
+  classDef fn fill:#6366f1,stroke:#4f46e5,color:#fff
+
+  G["∂L/∂a (incoming)"] --> R["× ReLU gradient"]
+  R --> P["z_pre was +0.74\n→ gradient passes through × 1\n∂L/∂z = ∂L/∂a"]
+  R --> N["z_pre was −0.30\n→ gradient blocked × 0\n∂L/∂z = 0"]
+
+  class R fn
+  class P pos
+  class N neg`
+    },
+    {
+      title: "Step 6: All gradients computed — now update",
+      body: "Once the backward pass completes, every weight in the network has a gradient. We then apply the gradient descent update rule to all of them simultaneously:\nw_new = w_old − (learning_rate × gradient)\n\nIn modern deep learning frameworks like PyTorch, all of this — forward pass, backward pass, gradient accumulation — happens automatically when you call loss.backward(). You don't implement it by hand.",
+      whyItMatters: "The reason modern neural networks are trainable is that backprop is O(n) in the number of weights — it touches each weight exactly once per backward pass. There's no smarter known algorithm for computing all gradients simultaneously.",
+      diagram: `graph LR
+  classDef complete fill:#dcfce7,stroke:#4ade80,color:#14532d
+  classDef update fill:#6366f1,stroke:#4f46e5,color:#fff
+  classDef result fill:#ede9fe,stroke:#8b5cf6,color:#4c1d95
+
+  BP["Backward pass complete\n∇w for all weights"] --> U["w_new = w_old − lr × ∇w"]
+  U --> R1["w₁: 0.850 → 0.846"]
+  U --> R2["w₂: 0.230 → 0.232"]
+  U --> R3["w₃: 0.670 → 0.667"]
+  R1 & R2 & R3 --> Done["✅ All weights updated\nslightly more accurate"]
+
+  class BP complete
+  class U update
+  class R1,R2,R3,Done result`
+    },
+  ]}
+/>
+
+## The Full Training Loop
+
+Putting forward pass and backprop together:
+
+<MermaidDiagram chart={`graph TD
+  classDef step fill:#ede9fe,stroke:#8b5cf6,color:#4c1d95
+  classDef back fill:#fef3c7,stroke:#f59e0b,color:#78350f
+  classDef done fill:#dcfce7,stroke:#16a34a,color:#14532d
+
+  A["Feed input through network\n(Forward pass)"] --> B["Compute loss\n(how wrong?)"]
+  B --> C["Compute ∂Loss/∂output\n(seed gradient)"]
+  C --> D["Layer N: compute ∂L/∂W_N and ∂L/∂a_(N-1)"]
+  D --> E["Layer N-1: compute ∂L/∂W_(N-1) and ∂L/∂a_(N-2)"]
+  E --> F["··· continue backwards ···"]
+  F --> G["Layer 1: compute ∂L/∂W_1"]
+  G --> H["Apply gradient descent to all weights simultaneously"]
+  H --> I{"More\nbatches?"}
+  I --"Yes"--> A
+  I --"No (epoch done)"--> J["✅ Epoch complete"]
+
+  class A,B step
+  class C,D,E,F,G back
+  class H,I step
+  class J done`}
+/>
+
+<ConceptCheck
+  question="During backpropagation, a neuron had a negative pre-activation value (z < 0) and uses ReLU. What is the gradient that flows back through this neuron?"
+  answer="Zero. ReLU outputs 0 for any negative input, which means changing that weight slightly produces no change in the output — and therefore no change in the loss. The gradient is blocked. This is why dead neurons (stuck at z < 0 permanently) stop learning: no gradient ever flows through them."
+/>
+
+## Why This Works at Scale
+
+Backprop computes every gradient in just **two passes** through the network — one forward, one backward. Compare this to naively estimating each gradient by perturbing one weight at a time: for GPT-3's 175 billion weights, that would require 175 billion forward passes per training step. Backprop does it in 2.
+
+This efficiency is what made deep learning practical. Every major neural network — image classifiers, language models, diffusion models — is trained using backpropagation.
+
+## Vanishing and Exploding Gradients
+
+Backpropagation multiplies gradients together as it moves backwards through layers. This multiplication can cause two catastrophic failures in deep networks:
+
+**Vanishing gradients:** If the gradient at each layer is a small number (say 0.1), then after 30 layers the gradient reaching the first layer is 0.1³⁰ ≈ 10⁻³⁰ — effectively zero. The early layers stop learning because they receive no signal.
+
+**Exploding gradients:** If the gradient at each layer is large (say 2.0), after 30 layers it becomes 2³⁰ ≈ 10⁹ — the weights receive enormous updates and the network destabilizes. In practice this shows up as NaN (not-a-number) losses.
+
+<MermaidDiagram chart={`graph LR
+  classDef output fill:#fee2e2,stroke:#f87171,color:#7f1d1d
+  classDef mid fill:#fef3c7,stroke:#f59e0b,color:#78350f
+  classDef dead fill:#6b7280,stroke:#4b5563,color:#fff
+  classDef explode fill:#7f1d1d,stroke:#450a0a,color:#fecaca
+
+  OUT["Output layer\ngradient = 1.0"] --> L5["Layer 5\ngradient = 0.2"]
+  L5 --> L4["Layer 4\ngradient = 0.04"]
+  L4 --> L3["Layer 3\ngradient = 0.008"]
+  L3 --> L2["Layer 2\ngradient = 0.0016"]
+  L2 --> L1["Layer 1\ngradient ≈ 0.0003\n← near zero: stops learning"]
+
+  class OUT output
+  class L5,L4 mid
+  class L3,L2,L1 dead`}
+/>
+
+### Four solutions that modern networks use
+
+**1. Gradient clipping** — the simplest fix for exploding gradients. Before applying the update, check the total gradient norm. If it exceeds a threshold (e.g. 1.0), scale all gradients down proportionally:
+```
+if ‖∇‖ > max_norm:
+    ∇ = ∇ × max_norm / ‖∇‖
+```
+This prevents any single update from being catastrophically large. Gradient clipping is the default in all modern training frameworks and is why you often see `max_grad_norm=1.0` in fine-tuning configs.
+
+**2. Residual connections (skip connections)** — instead of computing a new representation from scratch, each layer *adds its output to its input*:
+```
+output = layer(x) + x
+```
+The `+ x` term creates a direct highway for gradients. Even if the `layer(x)` gradients vanish, gradients still flow straight through via the `+ x` path. This is why ResNets (image models) and Transformers can have 96–200+ layers — residual connections make deep networks trainable.
+
+**3. Layer Normalization** — normalizes activations within each layer to have zero mean and unit variance, preventing activations from growing extremely large or small as they pass through many layers. You saw this in Chapter 2; this is the reason it exists.
+
+**4. Better initialization** — choosing starting weights carefully (e.g. Xavier/Glorot, He initialization) keeps the variance of activations roughly constant across layers, preventing the signal from amplifying or collapsing before training even starts.
+
+<MermaidDiagram chart={`graph TD
+  classDef problem fill:#fee2e2,stroke:#f87171,color:#7f1d1d
+  classDef solution fill:#dcfce7,stroke:#4ade80,color:#14532d
+  classDef where fill:#ede9fe,stroke:#8b5cf6,color:#4c1d95
+
+  VG["Vanishing gradients\nearly layers stop learning"] --> RESID["Residual connections\ngradient highway via x + layer(x)"]
+  VG --> LAYERNORM["Layer Normalization\nkeeps activations in healthy range"]
+  EG["Exploding gradients\nNaN losses, unstable training"] --> CLIP["Gradient clipping\nscale down large gradients"]
+  VG & EG --> INIT["Better initialization\nXavier / He / scaled random"]
+
+  RESID --> TRANS["Used in: all Transformers\nResNets · LSTMs"]
+  LAYERNORM --> TRANS
+  CLIP --> FT["Used in: all fine-tuning\nmax_grad_norm=1.0 default"]
+
+  class VG,EG problem
+  class RESID,LAYERNORM,CLIP,INIT solution
+  class TRANS,FT where`}
+/>
+
+This is why the Transformer architecture (Chapter 7) has a very specific structure: attention → add & layer norm → FFN → add & layer norm. The "add" is the residual connection and the "layer norm" prevents activation drift. Both are direct solutions to the vanishing gradient problem that plagued earlier deep networks.
