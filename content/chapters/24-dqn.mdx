@@ -109,7 +109,7 @@ Tabular Q-learning hits a wall with large state spaces. DQN (Deep Q-Network, Mni
     },
     {
       title: "Step 5: DQN improvements — Double DQN and Dueling DQN",
-      body: "The original DQN has known issues. Two important fixes:\n\n• Double DQN: standard DQN tends to overestimate Q-values (using the same network to both select and evaluate the best action introduces positive bias). Fix: use online network to select the action, target network to evaluate it:\ntarget = r + γ × Q_{θ⁻}(s', argmax_{a'} Q_θ(s', a'))\n\n• Dueling DQN: split the network into two streams:\n  - Value stream V(s): how good is this state?\n  - Advantage stream A(s,a): how much better is action a vs. average?\n  Q(s,a) = V(s) + A(s,a) − mean A(s,·)\n  This helps when many actions have similar Q-values — the value stream learns state quality even without action differences.",
+      body: "The original DQN has known issues. Two important fixes:\n\n• Double DQN: standard DQN tends to overestimate Q-values. Here's the problem concretely: suppose Q(s', a1)=5.2 and Q(s', a2)=5.1 due to random noise — the true values might both be 5.0. argmax picks a1, then evaluates a1 with the same noisy network, getting a target of 5.2. The overestimate gets baked into the training target and compounds over time. Fix: use the online network to select the best action, but the target network (different noise) to evaluate its value:\ntarget = r + γ × Q_{θ⁻}(s', argmax_{a'} Q_θ(s', a'))\n\n• Dueling DQN: split the network into two streams:\n  - Value stream V(s): how good is this state?\n  - Advantage stream A(s,a): how much better is action a vs. average?\n  Q(s,a) = V(s) + A(s,a) − mean A(s,·)\n  This helps when many actions have similar Q-values — the value stream learns state quality even without action differences.",
       whyItMatters: "Double DQN is a small change that consistently improves performance across games. Dueling DQN improves performance in environments where many actions have similar long-term value (e.g., moving around an empty area — direction barely matters). Together they form Double Dueling DQN, often the default in research.",
       diagram: `graph LR
   classDef orig fill:#fef3c7,stroke:#f59e0b,color:#78350f
@@ -145,9 +145,11 @@ Tabular Q-learning hits a wall with large state spaces. DQN (Deep Q-Network, Mni
 
 ## Prioritized Experience Replay
 
-Standard experience replay samples transitions uniformly at random — every stored experience is equally likely to be selected. This is wasteful: a transition where the agent discovered a key shortcut or made a critical mistake is just as likely to be skipped as a boring, already-learned transition.
+Standard experience replay samples transitions uniformly at random — every stored experience is equally likely to be selected. This is wasteful: if the agent has already learned that "walking into a wall does nothing," replaying that transition for the hundredth time teaches it nothing new. Meanwhile, the one transition where it first discovered a bonus room might never get resampled.
 
-**Prioritized Experience Replay (PER)** assigns a priority to each stored transition and samples high-priority transitions more often. The priority is based on the TD error |δ| = |r + γ max Q(s') − Q(s, a)| — transitions where the model is most wrong get the highest priority.
+**Prioritized Experience Replay (PER)** fixes this by sampling the transitions where the model is most wrong — measured by how far off its Q-value prediction was (the TD error). Transitions where the model is already accurate get sampled rarely; transitions where the model is still badly wrong get sampled often. This focuses learning where it's most needed.
+
+PER assigns a priority to each stored transition and samples high-priority transitions more often. The priority is based on the TD error |δ| = |r + γ max Q(s') − Q(s, a)| — transitions where the model is most wrong get the highest priority.
 
 <MermaidDiagram chart={`graph TD
   classDef high fill:#fee2e2,stroke:#f87171,color:#7f1d1d

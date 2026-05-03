@@ -84,7 +84,7 @@ Every neuron does the same three things:
     },
     {
       title: "Step 3: Apply an activation function",
-      body: "After computing z, the neuron passes it through an activation function. The most common one is ReLU (Rectified Linear Unit): if z > 0, output z; otherwise output 0. This introduces non-linearity — without it, a 100-layer network would behave exactly like a single layer, no matter how deep it is.",
+      body: "After computing z, the neuron passes it through an activation function.\n\nWhy is this step necessary? Without activation functions, stacking layers does absolutely nothing useful. A linear operation followed by another linear operation is still just a linear operation — a 100-layer network with no activations computes the exact same thing as a single-layer network. Activations break this collapse by introducing non-linearity between layers, letting each layer learn something genuinely new that earlier layers couldn't.\n\nThe most common activation is **ReLU** (Rectified Linear Unit):\n• If z > 0 → pass z through unchanged\n• If z ≤ 0 → output 0\n\nSimple, fast, and effective. Modern Transformers (including GPT and BERT) use **GeLU** instead — a smoother version that allows tiny negative values to partially pass through, which helps training stability.",
       whyItMatters: "Non-linearity is what allows neural networks to model complex, real-world relationships. A network without activation functions can only learn straight-line (linear) patterns — useless for most real problems.",
       diagram: `graph LR
   classDef pos fill:#dcfce7,stroke:#4ade80,color:#14532d
@@ -103,7 +103,7 @@ Every neuron does the same three things:
     },
     {
       title: "Step 4: Pass the output forward",
-      body: "The neuron's output becomes an input to every neuron in the next layer. This cascade continues layer by layer until we reach the output layer. In a classification network, the final layer uses a softmax function to convert raw numbers into probabilities that add up to 1 (e.g., 85% cat, 12% dog, 3% rabbit).",
+      body: "The neuron's output becomes an input to every neuron in the next layer. This cascade continues layer by layer until we reach the output layer.\n\nFor classification tasks, the final layer uses **softmax** to produce a valid probability distribution:\n• The network outputs raw scores called **logits** — e.g., cat: 3.2, dog: 1.1, rabbit: 0.3\n• Softmax converts each score to: eˢᶜᵒʳᵉ / (sum of all eˢᶜᵒʳᵉˢ)\n• Result: all outputs are positive and sum to exactly 1.0\n• e.g., cat: 85%, dog: 12%, rabbit: 3%\n\nHigher raw score → higher probability. Softmax ensures the outputs are always valid probabilities, no matter what the raw scores are.",
       whyItMatters: "This 'forward pass' is how the network makes a prediction. Training involves doing this forward pass millions of times with different inputs and adjusting the weights each time.",
       diagram: `graph LR
   classDef data fill:#dbeafe,stroke:#60a5fa,color:#1e3a8a

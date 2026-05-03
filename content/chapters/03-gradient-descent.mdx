@@ -73,7 +73,7 @@ But how do we find those values? There are roughly 175 billion weights in GPT-3.
     },
     {
       title: "Step 4: Compute the gradient (which way is uphill?)",
-      body: "Here's the clever part. The loss is a number. The weights are numbers. We can ask: 'if I nudge each weight slightly, does the loss go up or down?' The answer to this question for every single weight is called the gradient.\n\nThe gradient is like the slope of the hill. A large positive gradient for a weight means: 'increasing this weight makes the loss worse — go the other way'. A large negative gradient means: 'increasing this weight makes the loss better'.\n\nComputing gradients for all weights simultaneously is done via backpropagation (Chapter 4).",
+      body: "Here's the clever part. The loss is a number. The weights are numbers. We can ask: 'if I nudge each weight slightly, does the loss go up or down?' The answer to this question for every single weight is called the gradient.\n\nThe gradient tells you which direction is 'uphill' for each weight:\n• **Positive gradient (+)** → increasing this weight makes the loss worse. We need to decrease it.\n• **Negative gradient (−)** → increasing this weight makes the loss better. We need to increase it.\n• **Zero gradient (0)** → this weight is at a flat point. No update needed right now.\n\nThink of the gradient as a slope reading under your feet — one for every weight in the network simultaneously. Computing all of them at once is the job of backpropagation (Chapter 4).",
       whyItMatters: "The gradient tells us the exact direction to move each weight to reduce loss. Without it, we'd have to guess randomly — which would take forever for billions of weights.",
       diagram: `graph TD
   classDef loss fill:#fee2e2,stroke:#f87171,color:#7f1d1d
@@ -93,7 +93,7 @@ But how do we find those values? There are roughly 175 billion weights in GPT-3.
     },
     {
       title: "Step 5: Take a step downhill (weight update)",
-      body: "Now we update every weight by moving it in the opposite direction of its gradient — that is, downhill.\n\nThe update rule: w_new = w_old − (learning_rate × gradient)\n\nThe learning rate (often written as η or lr) controls how big a step we take. Too large and we'll overshoot the valley. Too small and training will take forever.\n\nTry adjusting the learning rate in the slider below to see the effect on convergence.",
+      body: "Now we update every weight by moving it in the opposite direction of its gradient — downhill toward lower loss.\n\nThe update rule: `w_new = w_old − (learning_rate × gradient)`\n\nThe **learning rate** (η or lr) controls how large a step to take:\n• **Too large (e.g. 0.1):** steps overshoot the valley — loss bounces back and forth and may never settle\n• **Too small (e.g. 0.00001):** steps are tiny — loss drops but training takes impractically long\n• **Just right (e.g. 0.001):** smooth descent — loss drops steadily each epoch and converges\n\nTry adjusting the learning rate in the slider below to see this effect directly.",
       whyItMatters: "This is the actual 'learning' moment. Every weight gets a tiny nudge that makes the loss slightly lower. Do this millions of times and the network becomes accurate.",
       diagram: `graph LR
   classDef old fill:#f1f5f9,stroke:#94a3b8,color:#334155

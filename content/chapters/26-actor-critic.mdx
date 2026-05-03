@@ -50,7 +50,7 @@ Actor-Critic methods unify the strengths of both approaches:
     },
     {
       title: "Step 2: The critic — the value network",
-      body: "The critic is a neural network V_φ(s) that estimates the value of each state: 'if we're in state s right now and follow the current policy, how much reward do we expect to collect in total?'\n\nThe critic is trained using TD learning:\n• Target: r + γ × V_φ(s')\n• Loss: (V_φ(s) − target)²\n• Update: reduce the prediction error (same as supervised regression)\n\nAs the critic gets better, its estimates become more accurate, which means the advantage estimates it provides to the actor become more reliable, which means the actor improves more efficiently.",
+      body: "The critic is a neural network V_φ(s) that estimates the value of each state: 'if we're in state s right now and follow the current policy, how much reward do we expect to collect in total?'\n\nThe critic uses TD (Temporal Difference) learning — update your estimate using the next estimate, without waiting for the full episode to end. It's like updating your GPS route every block instead of only when you reach the destination: you get faster feedback and can correct mistakes mid-journey.\n\nConcretely:\n• Target: r + γ × V_φ(s')  ← 'the reward I just got plus what I expect from here'\n• Loss: (V_φ(s) − target)²  ← nudge my estimate toward the target\n• Update: reduce the prediction error (same as supervised regression)\n\nAs the critic gets better, its estimates become more accurate, which means the advantage estimates it provides to the actor become more reliable, which means the actor improves more efficiently.",
       whyItMatters: "The critic's accuracy directly determines the quality of the actor's learning signal. An inaccurate critic provides noisy advantages — almost as bad as no baseline. This is why both networks must be trained simultaneously and carefully.",
       diagram: `graph LR
   classDef state fill:#dbeafe,stroke:#60a5fa,color:#1e3a8a
@@ -148,6 +148,8 @@ Actor-Critic methods unify the strengths of both approaches:
 />
 
 ## N-Step Returns: Bridging TD and Monte Carlo
+
+Consider a 500-step episode with a single reward at the very end — like an LLM generating a full response before receiving a quality score. Which of the 500 actions caused the good (or bad) outcome? With 1-step TD advantage, the reward at step 500 only reaches step 499 in the first training update, step 498 in the second, and so on — it takes 500 training iterations to assign credit all the way back to step 1. That's too slow. N-step returns and GAE fix this by looking multiple steps ahead per update, propagating credit much faster.
 
 The one-step advantage from Step 3 (A = r + γV(s') − V(s)) bootstraps off a single step. The full-return advantage from REINFORCE uses all future rewards with no bootstrapping. **N-step returns** sit between these extremes, and understanding them clarifies what GAE is actually computing.
 
