@@ -2,6 +2,7 @@ import AnalogyCard from '@/components/interactive/AnalogyCard';
 import StepWalkthrough from '@/components/interactive/StepWalkthrough';
 import MermaidDiagram from '@/components/interactive/MermaidDiagram';
 import ConceptCheck from '@/components/interactive/ConceptCheck';
+import RewardModelViz from '@/components/interactive/RewardModelViz';
 
 <AnalogyCard
   title="A student rewriting essays based on a teacher's marks"
@@ -47,7 +48,7 @@ Pre-training makes a model predict text. Supervised fine-tuning teaches it to fo
     },
     {
       title: "Step 2: Train the reward model",
-      body: "The reward model is a neural network that predicts human preference scores.\n\nArchitecture: start from a pre-trained LM (same base as the policy), add a linear head that outputs a scalar reward score.\n\nTraining objective: given a pair (response A, response B) where humans preferred B:\n\nLoss = −log σ(r(B) − r(A))\n\nThis uses the Bradley-Terry model — a standard framework for learning from pairwise comparisons. The key idea: if humans prefer B over A, train a model so that score(B) > score(A) by a margin. You don't need absolute ratings ('this response is a 7/10') — just relative judgments ('this is better than that'). The log sigmoid loss pushes r(B) − r(A) to be large and positive for preferred responses. σ is sigmoid.\n\nAfter training, r(prompt, response) predicts how much a human would prefer this response to alternatives.",
+      body: "The reward model is a neural network that predicts human preference scores.\n\nArchitecture: start from a pre-trained LM (same base as the policy), add a linear head that outputs a scalar reward score.\n\nTraining objective: given a pair (response A, response B) where humans preferred B:\n\nLoss = −log σ(r(B) − r(A))\n\nThis uses the Bradley-Terry model — a standard framework for learning from pairwise comparisons. The key idea: if humans prefer B over A, train a model so that score(B) > score(A) by a margin. You don't need absolute ratings ('this response is a 7/10') — just relative judgments ('this is better than that').\n\n**Plain English for the loss:** σ (sigmoid) converts any number into a probability between 0 and 1. σ(r(B) − r(A)) is the model's predicted probability that B is preferred over A. When r(B) > r(A) by a large margin, σ(large positive) ≈ 1.0 — 'I'm very confident B is better.' The −log of a number near 1 is near 0 — low loss, good. When r(B) ≈ r(A), σ(0) = 0.5 — 'I have no idea which is better' — and −log(0.5) = 0.69 — medium loss. When r(A) > r(B), σ(negative) < 0.5 — 'I think A is better, which is wrong' — and −log(small) is a large loss. So this loss directly rewards the model for assigning higher scores to the preferred response by a confident margin.\n\nAfter training, r(prompt, response) predicts how much a human would prefer this response to alternatives.",
       whyItMatters: "The reward model is the stand-in for human judgment at scale. Instead of having humans rate every response during RL training (which would require millions of human ratings), we have humans rate ~50,000 comparisons and train a model to generalize from those.",
       diagram: `graph LR
   classDef inp fill:#dbeafe,stroke:#60a5fa,color:#1e3a8a
@@ -139,6 +140,8 @@ Pre-training makes a model predict text. Supervised fine-tuning teaches it to fo
     },
   ]}
 />
+
+<RewardModelViz />
 
 <ConceptCheck
   question="During RLHF training, you notice the language model's outputs are getting increasingly long — it's padding responses with unnecessary repetition and filler phrases. The reward model score keeps increasing. What's likely happening, and how would you fix it?"

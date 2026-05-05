@@ -209,6 +209,8 @@ ReLU is the simplest activation function but not the only one. The choice of act
 
 The formula: GeLU(x) = x × Φ(x), where Φ(x) is the standard normal cumulative distribution function. In practice, a fast approximation is used: GeLU(x) ≈ 0.5x(1 + tanh(√(2/π)(x + 0.044715x³))).
 
+**Plain English for the formula:** Φ(x) is just the probability that a random number drawn from a standard bell curve is ≤ x. At x = 0 that probability is 0.5 (the midpoint of the bell). At large positive x, it's nearly 1 (almost the whole bell is to the left). So GeLU(x) = x × Φ(x) smoothly ramps from 0 (at very negative x) to x (at large positive x) — it's like a gate that opens gradually rather than snapping open at 0 the way ReLU does. The tanh approximation just computes Φ(x) quickly without a full statistical table lookup.
+
 ## Layer Normalization: Keeping Activations Stable
 
 One more building block you'll see constantly in LLMs: **Layer Normalization**. After the activation function in each layer, modern networks apply layer norm to keep values from growing out of control.
@@ -218,6 +220,8 @@ Layer Norm computes the mean and variance of a single token's representation acr
 y = (x − μ) / (σ + ε) × γ + β
 ```
 where γ and β are learnable parameters (scale and shift).
+
+**Plain English for the formula:** (x − μ) / σ is just subtracting the average and dividing by the spread — the same z-score calculation you'd use to standardize exam scores so the class average is 0 and one standard deviation is 1. After that rescaling, every layer receives inputs in a consistent, well-behaved range regardless of how wild the raw values were. γ and β then let the network learn to re-scale and re-center if a particular layer works better with a different range — they're the 'undo' knobs that give the model flexibility. The ε is a tiny number (like 1e-5) added to σ to prevent a divide-by-zero if all values in a layer happen to be identical.
 
 This is different from Batch Normalization (which normalizes across the batch dimension). Transformers use Layer Norm because it works on single sequences without needing batch statistics — important for variable-length text.
 

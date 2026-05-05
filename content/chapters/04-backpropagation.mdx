@@ -209,7 +209,7 @@ The `+ x` term creates a direct highway for gradients. Even if the `layer(x)` gr
 
 **3. Layer Normalization** — normalizes activations within each layer to have zero mean and unit variance, preventing activations from growing extremely large or small as they pass through many layers. You saw this in Chapter 2; this is the reason it exists.
 
-**4. Better initialization** — choosing starting weights carefully (e.g. Xavier/Glorot, He initialization) keeps the variance of activations roughly constant across layers, preventing the signal from amplifying or collapsing before training even starts.
+**4. Better initialization** — choosing starting weights carefully (e.g. Xavier/Glorot, He initialization) keeps the variance of activations roughly constant across layers, preventing the signal from amplifying or collapsing before training even starts. The core idea: if a layer receives n inputs and you initialize weights to random values with variance 1/n, then the expected variance of the layer's output matches its input. Think of it like a chain of amplifiers — if each one has gain = 1, the signal passes through unchanged; Xavier and He initialization set the gain to approximately 1 by scaling the random weights by √(1/n) or √(2/n) depending on the activation function.
 
 <MermaidDiagram chart={`graph TD
   classDef problem fill:#fee2e2,stroke:#f87171,color:#7f1d1d

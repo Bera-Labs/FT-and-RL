@@ -3,6 +3,7 @@ import StepWalkthrough from '@/components/interactive/StepWalkthrough';
 import MermaidDiagram from '@/components/interactive/MermaidDiagram';
 import ConceptCheck from '@/components/interactive/ConceptCheck';
 import ParameterSlider from '@/components/interactive/ParameterSlider';
+import LoRADecompViz from '@/components/interactive/LoRADecompViz';
 
 <AnalogyCard
   title="Sticky notes layered onto a textbook"
@@ -11,7 +12,9 @@ import ParameterSlider from '@/components/interactive/ParameterSlider';
 
 ## The Core Idea
 
-LoRA (Low-Rank Adaptation, Hu et al., 2021) rests on one observation: when you fine-tune a model on a specific task, the changes to the weight matrices have **low intrinsic rank**. This means the update ΔW doesn't need all its dimensions — it can be well-approximated by two small matrices multiplied together.
+LoRA (Low-Rank Adaptation, Hu et al., 2021) rests on one observation: when you fine-tune a model on a specific task, the changes to the weight matrices have **low intrinsic rank**.
+
+**What does "rank" mean without the linear algebra?** Think of a weight matrix as a collection of signals, each pointing in a different "direction" in the space of possible behaviors. A full-rank 4096×4096 matrix can encode 4096 completely independent behavioral directions — imagine 4096 different dials, each controlling something totally different. But when you fine-tune for a specific task (say, medical question answering), you're only shifting the model's behavior in a few meaningful ways: use medical vocabulary, adopt a clinical tone, produce structured answers. That's maybe 16–64 new "directions" of change, not 4096. The rest of the matrix stays essentially the same. "Low rank" means: the update only meaningfully moves in a small number of directions, so you can capture it with far fewer numbers. This means the update ΔW doesn't need all its dimensions — it can be well-approximated by two small matrices multiplied together.
 
 <MermaidDiagram chart={`graph LR
   classDef frozen fill:#dbeafe,stroke:#60a5fa,color:#1e3a8a
@@ -30,6 +33,8 @@ LoRA (Low-Rank Adaptation, Hu et al., 2021) rests on one observation: when you f
 />
 
 Instead of 16.7M trainable parameters per weight matrix, LoRA uses just 131k — less than **0.8%** — and achieves results that are remarkably close to full fine-tuning.
+
+<LoRADecompViz />
 
 <StepWalkthrough
   steps={[

@@ -2,6 +2,7 @@ import AnalogyCard from '@/components/interactive/AnalogyCard';
 import StepWalkthrough from '@/components/interactive/StepWalkthrough';
 import MermaidDiagram from '@/components/interactive/MermaidDiagram';
 import ConceptCheck from '@/components/interactive/ConceptCheck';
+import AttentionViz from '@/components/interactive/AttentionViz';
 
 <AnalogyCard
   title="A spotlight that decides which words to focus on"
@@ -89,7 +90,7 @@ Before Transformers (2017), language models used Recurrent Neural Networks (RNNs
     },
     {
       title: "Step 4: Multi-head attention — looking from multiple angles",
-      body: "One set of Q/K/V matrices is called a single attention head. But a word can be relevant to another word in multiple ways simultaneously: grammatically, semantically, positionally, by reference...\n\nMulti-head attention runs 8 (or 12, 16...) attention heads in parallel, each with its own Q/K/V matrices. Each head learns to focus on a different type of relationship. The outputs from all heads are concatenated and projected back to the model's size.\n\nIn a 12-layer model with 12 heads, that's 144 independent attention mechanisms learning 144 different relationship types.",
+      body: "One set of Q/K/V matrices is called a single attention head. But a word can be relevant to another word in multiple ways simultaneously: grammatically, semantically, positionally, by reference...\n\nMulti-head attention runs 8 (or 12, 16...) attention heads in parallel, each with its own Q/K/V matrices. Each head learns to focus on a different type of relationship. The outputs from all heads are concatenated and projected back to the model's size.\n\nA practical detail: each head doesn't see the full 768-dimensional token vector — the dimensions are split. With 12 heads and 768-dim embeddings, each head works in a 64-dimensional subspace (768 ÷ 12 = 64). This means head 1 attends using the first 64 dimensions, head 2 uses the next 64, and so on. Each head is essentially looking at the token through a different narrow window of the same vector, which forces each window to specialize on a different type of relationship. After all heads compute their attention, the 12 × 64 = 768 outputs are concatenated back into a full 768-dim vector.\n\nIn a 12-layer model with 12 heads, that's 144 independent attention mechanisms learning 144 different relationship types.",
       whyItMatters: "Different heads capture different linguistic phenomena. In GPT-2, researchers found heads that specifically track subject-verb agreement, coreference resolution, positional relationships, and more — each emerging from training with no explicit supervision.",
       diagram: `graph LR
   classDef head fill:#ede9fe,stroke:#8b5cf6,color:#4c1d95
@@ -172,7 +173,7 @@ Before Transformers (2017), language models used Recurrent Neural Networks (RNNs
     },
     {
       title: "Step 8: Flash Attention — making O(n²) practical",
-      body: "Standard self-attention computes a full N×N matrix of attention scores where N is the sequence length. For a 4,096-token context, that's 16 million pairs per layer — memory grows quadratically. At 128k tokens, storing this matrix in GPU memory is simply impossible.\n\nFirst, two key GPU memory concepts:\n• **HBM (High Bandwidth Memory)** — the GPU's main memory (e.g. 80 GB on an A100). Large, but slow to access. Reading data from HBM takes roughly 100× longer than doing arithmetic.\n• **SRAM** — a tiny on-chip cache (e.g. 20 MB on an A100). Extremely fast. Arithmetic on SRAM-resident data is nearly instant.\n\nStandard attention writes the full N×N matrix to HBM and reads it back repeatedly — the bottleneck is memory traffic, not arithmetic.\n\nFlash Attention (Dao et al., 2022) doesn't reduce the computation — it changes where it happens. It tiles the attention into small blocks that stay in SRAM throughout, never materializing the full N×N matrix in HBM. The result: identical mathematical output, but 2–4× faster and 5–20× less memory.\n\nThis is why modern models can handle long context windows. Enabling it is one of the highest-ROI fine-tuning optimizations:\n• HuggingFace: `attn_implementation='flash_attention_2'`\n• Install: `pip install flash-attn`",
+      body: "Standard self-attention computes a full N×N matrix of attention scores where N is the sequence length. For a 4,096-token context, that's 16 million pairs per layer — memory grows quadratically. At 128k tokens, storing this matrix in GPU memory is simply impossible.\n\nFirst, two key GPU memory concepts:\n• **HBM (High Bandwidth Memory)** — the GPU's main memory (e.g. 80 GB on an A100). Large, but slow to access. Reading data from HBM takes roughly 100× longer than doing arithmetic. Think of it like a warehouse: enormous capacity, but it takes time to fetch anything.\n• **SRAM** — a tiny on-chip cache (e.g. 20 MB on an A100). Extremely fast. Arithmetic on SRAM-resident data is nearly instant. Think of it like your workbench: small, but anything on it is immediately within reach.\n\nStandard attention writes the full N×N matrix to HBM (the warehouse) and reads it back repeatedly — the bottleneck is this constant back-and-forth between workbench and warehouse, not the actual arithmetic. Flash Attention works by keeping all intermediate results on the workbench (SRAM) throughout the calculation, so it never has to make that expensive warehouse trip at all.\n\nFlash Attention (Dao et al., 2022) doesn't reduce the computation — it changes where it happens. It tiles the attention into small blocks that stay in SRAM throughout, never materializing the full N×N matrix in HBM. The result: identical mathematical output, but 2–4× faster and 5–20× less memory.\n\nThis is why modern models can handle long context windows. Enabling it is one of the highest-ROI fine-tuning optimizations:\n• HuggingFace: `attn_implementation='flash_attention_2'`\n• Install: `pip install flash-attn`",
       whyItMatters: "Flash Attention doesn't trade quality for speed — it produces bit-identical results to standard attention. The gain is purely from smarter memory access. Understanding this distinction matters because it means you can always enable Flash Attention without worrying about changing model behavior.",
       diagram: `graph LR
   classDef slow fill:#fee2e2,stroke:#f87171,color:#7f1d1d
@@ -192,6 +193,8 @@ Before Transformers (2017), language models used Recurrent Neural Networks (RNNs
     },
   ]}
 />
+
+<AttentionViz />
 
 ## The Full Transformer in One Diagram
 

@@ -3,11 +3,14 @@ import StepWalkthrough from '@/components/interactive/StepWalkthrough';
 import MermaidDiagram from '@/components/interactive/MermaidDiagram';
 import ConceptCheck from '@/components/interactive/ConceptCheck';
 import ParameterSlider from '@/components/interactive/ParameterSlider';
+import GradientDescentViz from '@/components/interactive/GradientDescentViz';
 
 <AnalogyCard
   title="A blindfolded hiker finding the lowest valley"
   body="Imagine you're blindfolded on a hilly landscape. Your job is to reach the lowest valley, but you can't see — you can only feel the slope of the ground under your feet. So you take one small step in the downhill direction. Then another. You keep taking small steps, always following the slope, until the ground flattens out and you stop moving downhill. That flat spot is the valley floor — the lowest point you can find. This is exactly what a neural network does during training. The 'hills' represent wrong answers (high loss), the 'valley floor' represents the best possible answer (low loss), and each step is one weight update."
 />
+
+<GradientDescentViz />
 
 ## How Does a Model Actually Learn?
 
@@ -213,7 +216,7 @@ The update rule from Step 5 — `w = w − lr × gradient` — is called Stochas
 - `m` (first moment) is a running average of the gradient — like momentum, it smooths out noise
 - `v` (second moment) is a running average of the *squared* gradient — it tracks how volatile each weight's gradient is
 - The update `m̂ / √v̂` divides by the square root of recent gradient variance: weights with noisy gradients get a smaller effective step; weights with consistent gradients get a larger step
-- `m̂` and `v̂` are bias-corrected versions of `m` and `v` (because they start at zero, they're biased toward zero early in training)
+- `m̂` and `v̂` are bias-corrected versions of `m` and `v` — here's the concrete problem they fix: both `m` and `v` start at zero. At training step 1, suppose the gradient is 0.8. With β₁ = 0.9, Adam computes `m = 0.9 × 0 + 0.1 × 0.8 = 0.08`. But the true recent gradient is 0.8 — the running average is 10× too small just because it started at zero and hasn't had time to "warm up." The bias correction divides by (1 − β₁ᵗ), which at step 1 is (1 − 0.9¹) = 0.1, giving `m̂ = 0.08 / 0.1 = 0.8`. This restores the true estimate and prevents Adam from taking almost-zero steps at the very start of training.
 
 **Why this matters for the rest of the course:** Every chapter on fine-tuning and RLHF uses Adam or a variant (AdamW). When you see `lr=1e-4` or `lr=2e-5` as a recommended hyperparameter, that's the Adam learning rate α — not a raw SGD step size. Adam is so ubiquitous that "the optimizer" almost always means Adam unless stated otherwise.
 

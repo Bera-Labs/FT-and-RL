@@ -2,6 +2,7 @@ import AnalogyCard from '@/components/interactive/AnalogyCard';
 import StepWalkthrough from '@/components/interactive/StepWalkthrough';
 import MermaidDiagram from '@/components/interactive/MermaidDiagram';
 import ConceptCheck from '@/components/interactive/ConceptCheck';
+import PolicyUpdateViz from '@/components/interactive/PolicyUpdateViz';
 
 <AnalogyCard
   title="Directly adjusting your strategy, not the value map"
@@ -48,7 +49,7 @@ Policy gradient methods ask: *what parameters make this policy produce more rewa
     {
       title: "Step 2: The REINFORCE algorithm",
       body: "REINFORCE (Williams, 1992) is the simplest policy gradient algorithm. The core idea:\n\n1. Run a complete episode using the current policy, collecting: (s₀, a₀, r₀), (s₁, a₁, r₁), ...\n2. For each timestep t, compute the return G_t (total discounted reward from t onward)\n3. Update the policy: for each step, if G_t was high, increase the probability of action a_t in state s_t; if low, decrease it\n\nThe gradient update:\n∇_θ J(θ) = E[G_t × ∇_θ log π_θ(a_t | s_t)]\n\nInterpretation: if action a led to high return G_t, increase the log-probability of taking a in s. If it led to low return, decrease it.",
-      whyItMatters: "The log probability trick (∇ log π × G) is elegant — it converts a gradient through a sampling operation into a product of two quantities we can compute: the return G (from rollout) and the gradient of log-probability (from backprop through the policy network).",
+      whyItMatters: "The log probability trick (∇ log π × G) is elegant — it converts a gradient through a sampling operation into a product of two quantities we can compute: the return G (from rollout) and the gradient of log-probability (from backprop through the policy network). The key insight: you can't backpropagate through a random sample (the environment's dice roll), but you CAN backpropagate through the log-probability that the policy assigned to that sample. Multiplying by G then re-weights this gradient — 'push in this direction if the outcome was good, push against it if the outcome was bad.' Think of it as: 'I sampled an action and saw how it turned out; now I'm saying either do that more or less often in this situation.'",
       diagram: `graph TD
   classDef collect fill:#dbeafe,stroke:#60a5fa,color:#1e3a8a
   classDef compute fill:#fef3c7,stroke:#f59e0b,color:#78350f
@@ -127,6 +128,8 @@ Policy gradient methods ask: *what parameters make this policy produce more rewa
     },
   ]}
 />
+
+<PolicyUpdateViz />
 
 <ConceptCheck
   question="REINFORCE assigns a return of G=+8 to every action taken in an episode that ended with a win. But action 3 was actually a mistake that the agent recovered from. How does the baseline subtraction help correct this?"
